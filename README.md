@@ -98,6 +98,19 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
+### Docker Setup (Recommended)
+
+If you prefer using Docker:
+
+```bash
+# Build and run with Docker Compose
+docker-compose up --build
+
+# Or build and run separately
+docker build -t learnmate-backend .
+docker run -p 8000:8000 --env-file .env learnmate-backend
+```
+
 ## ⚙️ Setup
 
 ### Environment Configuration
