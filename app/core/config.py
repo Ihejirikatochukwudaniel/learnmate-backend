@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     SUPABASE_ANON_KEY: str
     SUPABASE_SERVICE_KEY: str
     SUPABASE_JWT_SECRET: str
+    USE_REAL_JWT: bool = False
 
     class Config:
         env_file = ".env"
