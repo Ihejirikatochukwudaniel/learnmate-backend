@@ -2,6 +2,7 @@ import os
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from app.db.supabase import supabase
+from app.core.config import settings
 
 security = HTTPBearer()
 
@@ -18,6 +19,10 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
     Raises:
         HTTPException: 401 if token is invalid, expired, or user profile not found
     """
+    # Use dummy data for testing if USE_REAL_JWT is false
+    if not settings.USE_REAL_JWT:
+        return get_dummy_user()
+
     # Validate authorization scheme
     if not credentials or credentials.scheme.lower() != "bearer":
         raise HTTPException(
