@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.openapi.utils import get_openapi
 from app.modules.auth.router import router as auth_router
 from app.modules.profiles.router import router as profiles_router
 from app.modules.classes.router import router as classes_router
@@ -14,6 +15,29 @@ app = FastAPI(
     description="Education platform backend with role-based access control",
     version="1.0.0"
 )
+
+# Custom OpenAPI schema to remove global security requirements
+def custom_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+    openapi_schema = get_openapi(
+        title="LearnMate Backend MVP",
+        version="1.0.0",
+        description="Education platform backend with role-based access control",
+        routes=app.routes,
+    )
+    # Remove global security requirements from all operations
+    for path_item in openapi_schema.get("paths", {}).values():
+        for operation in path_item.values():
+            if "security" in operation:
+                del operation["security"]
+    # Remove security schemes from components
+    if "components" in openapi_schema and "securitySchemes" in openapi_schema["components"]:
+        del openapi_schema["components"]["securitySchemes"]
+    app.openapi_schema = openapi_schema
+    return app.openapi_schema
+
+app.openapi = custom_openapi
 
 # Configure CORS
 app.add_middleware(
