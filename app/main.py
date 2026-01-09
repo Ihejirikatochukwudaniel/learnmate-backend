@@ -53,6 +53,26 @@ app.add_middleware(
 def root():
     return {"message": "Hello World from LearnMate!"}
 
+# Health check route
+@app.get("/health")
+def health_check():
+    """Check if the service and database connection are healthy"""
+    try:
+        from app.db.supabase import supabase
+        # Test database connection
+        test_response = supabase.table('profiles').select('id').limit(1).execute()
+        return {
+            "status": "healthy",
+            "database": "connected",
+            "timestamp": "2026-01-09T23:14:00Z"
+        }
+    except Exception as e:
+        return {
+            "status": "unhealthy",
+            "database": f"error: {str(e)}",
+            "timestamp": "2026-01-09T23:14:00Z"
+        }
+
 # Include routers
 app.include_router(auth_router, prefix="/auth", tags=["Auth"])
 app.include_router(profiles_router, prefix="/profiles", tags=["Profiles"])

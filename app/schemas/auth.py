@@ -3,7 +3,7 @@ from typing import Optional
 
 class UserResponse(BaseModel):
     id: str
-    email: str
+    email: Optional[str] = None
     role: str
     full_name: Optional[str] = None
 

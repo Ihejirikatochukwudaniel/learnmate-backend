@@ -21,7 +21,7 @@ def get_user_profile_by_id(request: UserIdRequest):
 
     try:
         # Fetch user profile from profiles table using the provided user_id
-        profile_response = supabase.table("profiles").select("id, full_name, email, role").eq("id", user_id).execute()
+        profile_response = supabase.table("profiles").select("id, full_name, role").eq("id", user_id).execute()
 
         if not profile_response.data or len(profile_response.data) == 0:
             raise HTTPException(
@@ -38,6 +38,8 @@ def get_user_profile_by_id(request: UserIdRequest):
                 detail="User profile incomplete. Role information missing."
             )
 
+        # Add email as null since it's not in the database
+        profile["email"] = None
         return UserResponse(**profile)
 
     except HTTPException:
