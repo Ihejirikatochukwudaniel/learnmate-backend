@@ -6,7 +6,8 @@ from datetime import datetime, date
 class Profile(BaseModel):
     id: str
     email: str
-    full_name: Optional[str] = None
+    first_name: str
+    last_name: str
     role: str  # 'admin', 'teacher', 'student'
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None

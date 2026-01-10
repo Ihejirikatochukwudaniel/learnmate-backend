@@ -3,6 +3,8 @@ from app.db.supabase import supabase
 from app.core.dependencies import require_admin
 from app.schemas.profiles import ProfileCreate
 from typing import Dict
+import secrets
+import string
 
 router = APIRouter(tags=["Admin"])
 
@@ -64,33 +66,53 @@ def get_all_users(_: dict = Depends(require_admin)):
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-@router.post("/users")
+@router.post("/create-user")
 def create_user(user_data: ProfileCreate, _: dict = Depends(require_admin)):
     """
     Create a new user. Admin only.
     """
     try:
-        # Create user in Supabase Auth
+        # Generate password if not provided
+        password = user_data.password
+        if not password:
+            # Generate a secure 12-character password
+            alphabet = string.ascii_letters + string.digits + string.punctuation
+            password = ''.join(secrets.choice(alphabet) for i in range(12))
+
+        # Create user in Supabase Auth with user_metadata
         auth_response = supabase.auth.admin.create_user({
             "email": user_data.email,
-            "password": "Welcome123!",  # Default password
-            "email_confirm": True  # Auto-confirm email
+            "password": password,
+            "email_confirm": True,  # Auto-confirm email
+            "user_metadata": {
+                "firstName": user_data.firstName,
+                "lastName": user_data.lastName,
+                "role": user_data.role
+            }
         })
         user_id = auth_response.user.id
 
         # Create profile in profiles table
-        full_name = f"{user_data.firstName} {user_data.lastName}"
         profile_data = {
             "id": user_id,
             "email": user_data.email,
-            "full_name": full_name,
+            "first_name": user_data.firstName,
+            "last_name": user_data.lastName,
             "role": user_data.role
         }
         supabase.table("profiles").insert(profile_data).execute()
 
-        return {"message": "User created successfully", "user_id": user_id}
+        response = {
+            "message": "User created successfully",
+            "user_id": user_id,
+            "email": user_data.email
+        }
+        if not user_data.password:
+            response["generated_password"] = password
+
+        return response
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=f"Failed to create user: {str(e)}")
 
 @router.get("/activity")
 def get_recent_activity(limit: int = 50, _: dict = Depends(require_admin)):
