@@ -3,7 +3,9 @@ from typing import Optional
 from datetime import datetime
 
 class ProfileCreate(BaseModel):
-    full_name: Optional[str] = None
+    firstName: str
+    lastName: str
+    email: str
     role: str  # 'admin', 'teacher', 'student'
 
 class ProfileUpdate(BaseModel):

@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from app.db.supabase import supabase
 from app.core.dependencies import require_admin
+from app.schemas.profiles import ProfileCreate
 from typing import Dict
 
 router = APIRouter(tags=["Admin"])
@@ -60,6 +61,34 @@ def get_all_users(_: dict = Depends(require_admin)):
     try:
         result = supabase.table("profiles").select("*").execute()
         return result.data
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.post("/users")
+def create_user(user_data: ProfileCreate, _: dict = Depends(require_admin)):
+    """
+    Create a new user. Admin only.
+    """
+    try:
+        # Create user in Supabase Auth
+        auth_response = supabase.auth.admin.create_user({
+            "email": user_data.email,
+            "password": "Welcome123!",  # Default password
+            "email_confirm": True  # Auto-confirm email
+        })
+        user_id = auth_response.user.id
+
+        # Create profile in profiles table
+        full_name = f"{user_data.firstName} {user_data.lastName}"
+        profile_data = {
+            "id": user_id,
+            "email": user_data.email,
+            "full_name": full_name,
+            "role": user_data.role
+        }
+        supabase.table("profiles").insert(profile_data).execute()
+
+        return {"message": "User created successfully", "user_id": user_id}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
