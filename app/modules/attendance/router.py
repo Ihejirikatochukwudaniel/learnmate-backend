@@ -173,3 +173,55 @@ def delete_attendance(attendance_id: int, user: dict = Depends(require_admin_or_
         return {"message": "Attendance record deleted"}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+@router.get("/class/{class_id}/summary", response_model=dict)
+def get_attendance_summary(class_id: int, date: str = None, user: dict = Depends(require_admin_or_teacher)):
+    """
+    Get attendance summary for a class. Admin or teacher of the class.
+    Shows total students, present count, absent count, and percentage.
+    """
+    try:
+        # Check if class exists and user has permission
+        class_result = supabase.table("classes").select("*").eq("id", class_id).execute()
+        if not class_result.data:
+            raise HTTPException(status_code=404, detail="Class not found")
+
+        if user["role"] == "teacher" and class_result.data[0]["teacher_id"] != user["id"]:
+            raise HTTPException(status_code=403, detail="Access denied")
+
+        # Get enrolled students count
+        enrollment_result = supabase.table("class_students").select("student_id", count="exact").eq("class_id", class_id).execute()
+        total_students = enrollment_result.count if hasattr(enrollment_result, 'count') else len(enrollment_result.data)
+
+        if total_students == 0:
+            return {
+                "class_id": class_id,
+                "date": date,
+                "total_students": 0,
+                "present_count": 0,
+                "absent_count": 0,
+                "attendance_percentage": 0.0
+            }
+
+        # Get attendance records for the specified date (or today's date if not specified)
+        if not date:
+            from datetime import date as date_type
+            date = date_type.today().isoformat()
+
+        attendance_query = supabase.table("attendance").select("status").eq("class_id", class_id).eq("date", date)
+        attendance_result = attendance_query.execute()
+
+        present_count = sum(1 for record in attendance_result.data if record["status"] == "present")
+        absent_count = total_students - present_count
+        attendance_percentage = (present_count / total_students) * 100 if total_students > 0 else 0.0
+
+        return {
+            "class_id": class_id,
+            "date": date,
+            "total_students": total_students,
+            "present_count": present_count,
+            "absent_count": absent_count,
+            "attendance_percentage": round(attendance_percentage, 2)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
