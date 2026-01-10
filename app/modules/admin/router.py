@@ -66,6 +66,54 @@ def get_all_users(_: dict = Depends(require_admin)):
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+@router.post("/users")
+def create_user_via_users(user_data: ProfileCreate, _: dict = Depends(require_admin)):
+    """
+    Create a new user via POST /admin/users. Admin only.
+    """
+    try:
+        # Generate password if not provided
+        password = user_data.password
+        if not password:
+            # Generate a secure 12-character password
+            alphabet = string.ascii_letters + string.digits + string.punctuation
+            password = ''.join(secrets.choice(alphabet) for i in range(12))
+
+        # Create user in Supabase Auth with user_metadata
+        auth_response = supabase.auth.admin.create_user({
+            "email": user_data.email,
+            "password": password,
+            "email_confirm": True,  # Auto-confirm email
+            "user_metadata": {
+                "firstName": user_data.firstName,
+                "lastName": user_data.lastName,
+                "role": user_data.role
+            }
+        })
+        user_id = auth_response.user.id
+
+        # Create profile in profiles table
+        profile_data = {
+            "id": user_id,
+            "email": user_data.email,
+            "first_name": user_data.firstName,
+            "last_name": user_data.lastName,
+            "role": user_data.role
+        }
+        supabase.table("profiles").insert(profile_data).execute()
+
+        response = {
+            "message": "User created successfully",
+            "user_id": user_id,
+            "email": user_data.email
+        }
+        if not user_data.password:
+            response["generated_password"] = password
+
+        return response
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to create user: {str(e)}")
+
 @router.post("/create-user")
 def create_user(user_data: ProfileCreate, _: dict = Depends(require_admin)):
     """
