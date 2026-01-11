@@ -1,19 +1,24 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from app.db.supabase import supabase
 from app.schemas.classes import ClassCreate, ClassUpdate, ClassResponse, ClassStudentAdd, ClassStudentResponse
-from app.core.dependencies import require_admin, require_teacher, require_admin_or_teacher
+from app.core.dependencies import require_admin, require_teacher, require_admin_or_teacher, require_admin_by_uuid, require_admin_or_teacher_by_uuid
 from app.core.security import get_current_user
 from datetime import datetime
+import uuid
 
 router = APIRouter(tags=["Classes"])
 
 @router.post("/", response_model=ClassResponse)
-def create_class(class_data: ClassCreate, _: dict = Depends(require_admin)):
+def create_class(class_data: ClassCreate, admin_uuid: str = Query(..., description="UUID of the admin user")):
     """
     Create a new class. Admin only.
     """
     try:
+        # Verify admin by UUID
+        admin_profile = require_admin_by_uuid(admin_uuid)
+
         class_dict = {
+            "id": str(uuid.uuid4()),
             "name": class_data.name,
             "description": class_data.description,
             "teacher_id": class_data.teacher_id,
@@ -49,7 +54,7 @@ def get_all_classes(user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=400, detail=str(e))
 
 @router.get("/{class_id}", response_model=ClassResponse)
-def get_class(class_id: int, user: dict = Depends(get_current_user)):
+def get_class(class_id: str, user: dict = Depends(get_current_user)):
     """
     Get specific class by ID.
     """
@@ -74,7 +79,7 @@ def get_class(class_id: int, user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=400, detail=str(e))
 
 @router.put("/{class_id}", response_model=ClassResponse)
-def update_class(class_id: int, class_data: ClassUpdate, _: dict = Depends(require_admin)):
+def update_class(class_id: str, class_data: ClassUpdate, admin_uuid: str = Query(..., description="UUID of the admin user")):
     """
     Update class. Admin only.
     """
@@ -95,7 +100,7 @@ def update_class(class_id: int, class_data: ClassUpdate, _: dict = Depends(requi
         raise HTTPException(status_code=400, detail=str(e))
 
 @router.delete("/{class_id}")
-def delete_class(class_id: int, _: dict = Depends(require_admin)):
+def delete_class(class_id: str, admin_uuid: str = Query(..., description="UUID of the admin user")):
     """
     Delete class. Admin only.
     """
@@ -108,7 +113,7 @@ def delete_class(class_id: int, _: dict = Depends(require_admin)):
         raise HTTPException(status_code=400, detail=str(e))
 
 @router.post("/{class_id}/students", response_model=ClassStudentResponse)
-def add_student_to_class(class_id: int, student_data: ClassStudentAdd, user: dict = Depends(require_admin_or_teacher)):
+def add_student_to_class(class_id: str, student_data: ClassStudentAdd, user: dict = Depends(require_admin_or_teacher)):
     """
     Add student to class. Admin or teacher of the class.
     """
@@ -138,7 +143,7 @@ def add_student_to_class(class_id: int, student_data: ClassStudentAdd, user: dic
         raise HTTPException(status_code=400, detail=str(e))
 
 @router.get("/{class_id}/students", response_model=list[ClassStudentResponse])
-def get_class_students(class_id: int, user: dict = Depends(require_admin_or_teacher)):
+def get_class_students(class_id: str, user: dict = Depends(require_admin_or_teacher)):
     """
     Get students enrolled in class. Admin or teacher of the class.
     """
@@ -157,7 +162,7 @@ def get_class_students(class_id: int, user: dict = Depends(require_admin_or_teac
         raise HTTPException(status_code=400, detail=str(e))
 
 @router.delete("/{class_id}/students/{student_id}")
-def remove_student_from_class(class_id: int, student_id: str, user: dict = Depends(require_admin_or_teacher)):
+def remove_student_from_class(class_id: str, student_id: str, user: dict = Depends(require_admin_or_teacher)):
     """
     Remove student from class. Admin or teacher of the class.
     """

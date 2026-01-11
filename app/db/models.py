@@ -14,7 +14,7 @@ class Profile(BaseModel):
 
 # Class model
 class Class(BaseModel):
-    id: Optional[int] = None
+    id: Optional[str] = None
     name: str
     description: Optional[str] = None
     teacher_id: str
@@ -23,7 +23,7 @@ class Class(BaseModel):
 
 # Class student relationship
 class ClassStudent(BaseModel):
-    class_id: int
+    class_id: str
     student_id: str
     enrolled_at: Optional[datetime] = None
 

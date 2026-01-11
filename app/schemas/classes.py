@@ -13,7 +13,7 @@ class ClassUpdate(BaseModel):
     teacher_id: Optional[str] = None
 
 class ClassResponse(BaseModel):
-    id: int
+    id: str
     name: str
     description: Optional[str] = None
     teacher_id: str
@@ -24,6 +24,6 @@ class ClassStudentAdd(BaseModel):
     student_id: str
 
 class ClassStudentResponse(BaseModel):
-    class_id: int
+    class_id: str
     student_id: str
     enrolled_at: datetime
