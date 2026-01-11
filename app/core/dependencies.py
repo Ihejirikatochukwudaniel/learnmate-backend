@@ -1,5 +1,6 @@
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, Query
 from app.core.security import get_current_user
+from app.db.supabase import supabase
 from typing import Dict
 
 def require_role(required_role: str):
@@ -35,3 +36,39 @@ def require_admin_or_teacher(user: Dict = Depends(get_current_user)):
             detail="Access denied. Required role: admin or teacher"
         )
     return user
+
+def require_admin_by_uuid(admin_uuid: str = Query(..., description="UUID of the admin user")):
+    """
+    Dependency to verify admin role by UUID.
+    Checks if the provided UUID corresponds to a user with admin role in the profiles table.
+    """
+    try:
+        # Fetch user profile from profiles table using the provided UUID
+        profile_response = supabase.table("profiles").select("id, role").eq("id", admin_uuid).execute()
+
+        if not profile_response.data or len(profile_response.data) == 0:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Admin user not found"
+            )
+
+        profile = profile_response.data[0]
+
+        # Check if role is admin
+        if profile.get("role") != "admin":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied. Admin role required"
+            )
+
+        return profile
+
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is
+        raise
+    except Exception as e:
+        # Catch any other exceptions (network issues, Supabase errors, etc.)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to verify admin access"
+        )

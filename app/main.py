@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
+from fastapi.security import HTTPBearer
 from app.modules.auth.router import router as auth_router
 from app.modules.profiles.router import router as profiles_router
 from app.modules.classes.router import router as classes_router
@@ -10,13 +11,16 @@ from app.modules.submissions.router import router as submissions_router
 from app.modules.grades.router import router as grades_router
 from app.modules.admin.router import router as admin_router
 
+# Create security scheme for JWT Bearer tokens
+security = HTTPBearer()
+
 app = FastAPI(
     title="LearnMate Backend MVP",
     description="Education platform backend with role-based access control",
     version="1.0.0"
 )
 
-# Custom OpenAPI schema to remove global security requirements
+# Custom OpenAPI schema to configure security properly
 def custom_openapi():
     if app.openapi_schema:
         return app.openapi_schema
@@ -26,14 +30,29 @@ def custom_openapi():
         description="Education platform backend with role-based access control",
         routes=app.routes,
     )
-    # Remove global security requirements from all operations
-    for path_item in openapi_schema.get("paths", {}).values():
-        for operation in path_item.values():
-            if "security" in operation:
-                del operation["security"]
-    # Remove security schemes from components
-    if "components" in openapi_schema and "securitySchemes" in openapi_schema["components"]:
-        del openapi_schema["components"]["securitySchemes"]
+
+    # Add security schemes for Swagger UI
+    if "components" not in openapi_schema:
+        openapi_schema["components"] = {}
+    openapi_schema["components"]["securitySchemes"] = {
+        "BearerAuth": {
+            "type": "http",
+            "scheme": "bearer",
+            "bearerFormat": "JWT"
+        }
+    }
+
+    # Add security requirements to endpoints that need authentication
+    # This makes the lock icon appear in Swagger UI for protected endpoints
+    for path, path_item in openapi_schema.get("paths", {}).items():
+        for method, operation in path_item.items():
+            # Skip endpoints that don't need authentication
+            if path in ["/", "/health"] or path.startswith("/auth/") or path == "/admin/bootstrap-admin":
+                continue
+
+            # Add security requirement for all other endpoints
+            operation["security"] = [{"BearerAuth": []}]
+
     app.openapi_schema = openapi_schema
     return app.openapi_schema
 

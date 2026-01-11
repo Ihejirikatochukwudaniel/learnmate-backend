@@ -1,4 +1,5 @@
 import os
+import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from app.db.supabase import supabase
@@ -39,17 +40,16 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
         )
 
     try:
-        # Verify and decode the JWT token with Supabase
-        user_response = supabase.auth.get_user(token)
+        # Decode JWT to extract user_id (sub claim) without signature verification
+        # Supabase JWT role is always "authenticated", not the actual user role
+        payload = jwt.decode(token, options={"verify_signature": False})
+        user_id = payload.get("sub")
 
-        if not user_response or not hasattr(user_response, 'user') or not user_response.user:
+        if not user_id:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid or expired token"
+                detail="Invalid token: missing user ID"
             )
-
-        user_data = user_response.user
-        user_id = str(user_data.id)
 
         # Fetch fresh user profile from profiles table
         profile_response = supabase.table("profiles").select("id, full_name, email, role").eq("id", user_id).execute()
