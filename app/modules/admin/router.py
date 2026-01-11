@@ -243,6 +243,54 @@ def bootstrap_admin(user_data: ProfileCreate):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to bootstrap admin: {str(e)}")
 
+@router.delete("/users/{user_id}")
+def delete_user(user_id: str, _: dict = Depends(require_admin_by_uuid)):
+    """
+    Delete a user and all associated data. Admin only.
+    This will permanently remove the user from auth.users and profiles table,
+    and cascade delete all related records (classes, attendance, submissions, etc.)
+    """
+    try:
+        # Check if user exists
+        user_check = supabase.table("profiles").select("id, email, role").eq("id", user_id).execute()
+        if not user_check.data:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        user_data = user_check.data[0]
+
+        # Prevent deletion of the last admin user
+        if user_data["role"] == "admin":
+            admin_count = supabase.table("profiles").select("id", count="exact").eq("role", "admin").execute()
+            admin_total = admin_count.count if hasattr(admin_count, 'count') else len(admin_count.data)
+            if admin_total <= 1:
+                raise HTTPException(status_code=400, detail="Cannot delete the last admin user")
+
+        # Delete from profiles table first (this will cascade delete related records)
+        try:
+            supabase.table("profiles").delete().eq("id", user_id).execute()
+        except Exception as profile_error:
+            raise HTTPException(status_code=500, detail=f"Failed to delete user profile: {str(profile_error)}")
+
+        # Delete from auth.users
+        try:
+            supabase.auth.admin.delete_user(user_id)
+        except Exception as auth_error:
+            # If auth deletion fails, try to restore the profile (though this might not work due to cascades)
+            print(f"WARNING: Failed to delete auth user after profile deletion: {auth_error}")
+            # Note: We don't re-create the profile since cascade deletes may have removed other data
+            raise HTTPException(status_code=500, detail=f"Failed to delete auth user: {str(auth_error)}")
+
+        return {
+            "message": f"User {user_data['email']} deleted successfully",
+            "user_id": user_id,
+            "email": user_data["email"]
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Unexpected error deleting user: {str(e)}")
+
 @router.get("/activity")
 def get_recent_activity(limit: int = 50, _: dict = Depends(require_admin_by_uuid)):
     """
