@@ -31,25 +31,23 @@ def create_class(class_data: ClassCreate, admin_uuid: str = Query(..., descripti
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-@router.get("/", response_model=list[ClassResponse])
-def get_all_classes(user: dict = Depends(get_current_user)):
+@router.get("/admin/{admin_uuid}")
+def get_classes_by_admin(admin_uuid: str):
     """
-    Get all classes. Students see classes they're enrolled in, teachers see their classes, admins see all.
+    Get all classes for a specific admin UUID. For MVP/demo purposes.
+    Does not require access-token auth. Returns 404 if no classes found.
     """
     try:
-        if user["role"] == "admin":
-            result = supabase.table("classes").select("*").execute()
-        elif user["role"] == "teacher":
-            result = supabase.table("classes").select("*").eq("teacher_id", user["id"]).execute()
-        else:  # student
-            # Get classes where student is enrolled
-            enrollments = supabase.table("class_students").select("class_id").eq("student_id", user["id"]).execute()
-            class_ids = [e["class_id"] for e in enrollments.data]
-            if not class_ids:
-                return []
-            result = supabase.table("classes").select("*").in_("id", class_ids).execute()
+        result = supabase.table("classes").select("*").eq("admin_id", admin_uuid).execute()
+        classes_data = result.data or []
 
-        return [ClassResponse(**cls) for cls in result.data]
+        if not classes_data:
+            raise HTTPException(status_code=404, detail="No classes found for this admin")
+
+        return {
+            "admin_id": admin_uuid,
+            "classes": classes_data
+        }
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
