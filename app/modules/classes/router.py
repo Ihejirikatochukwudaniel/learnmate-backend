@@ -18,24 +18,33 @@ import uuid
 router = APIRouter(tags=["Classes"])
 
 
+# -------------------------
+# HELPER: ATTACH STUDENTS
+# -------------------------
 def attach_students_to_class(class_obj: dict) -> dict:
-    students_result = (
+    enrollments = (
         supabase
         .table("class_students")
-        .select("student_id, profiles(id, full_name)")
+        .select("student_id")
         .eq("class_id", class_obj["id"])
         .execute()
     )
 
-    class_obj["students"] = [
-        {
-            "id": row["profiles"]["id"],
-            "full_name": row["profiles"]["full_name"],
-        }
-        for row in students_result.data
-        if row.get("profiles")
-    ]
+    student_ids = [row["student_id"] for row in enrollments.data]
 
+    if not student_ids:
+        class_obj["students"] = []
+        return class_obj
+
+    students = (
+        supabase
+        .table("profiles")
+        .select("id, full_name, email")
+        .in_("id", student_ids)
+        .execute()
+    )
+
+    class_obj["students"] = students.data
     return class_obj
 
 
@@ -68,15 +77,16 @@ def create_class(
 @router.get("/", response_model=list[dict])
 def get_classes(
     uid: str = Query(..., description="User UID"),
-    role: str = Query(..., description="admin | teacher | student"),
 ):
-    if role == "admin":
-        require_admin_by_uuid(uid)
+    user = require_admin_or_teacher_by_uuid(uid)
+
+    # ADMIN: see all classes
+    if user["role"] == "admin":
         result = supabase.table("classes").select("*").execute()
         return [attach_students_to_class(cls) for cls in result.data]
 
-    if role == "teacher":
-        require_teacher_by_uuid(uid)
+    # TEACHER: see own classes
+    if user["role"] == "teacher":
         result = (
             supabase
             .table("classes")
@@ -86,18 +96,29 @@ def get_classes(
         )
         return [attach_students_to_class(cls) for cls in result.data]
 
-    if role == "student":
-        enrollments = (
-            supabase
-            .table("class_students")
-            .select("classes(*)")
-            .eq("student_id", uid)
-            .execute()
-        )
-        classes = [row["classes"] for row in enrollments.data]
-        return [attach_students_to_class(cls) for cls in classes]
+    # STUDENT: see enrolled classes
+    enrollments = (
+        supabase
+        .table("class_students")
+        .select("class_id")
+        .eq("student_id", uid)
+        .execute()
+    )
 
-    raise HTTPException(status_code=400, detail="Invalid role")
+    class_ids = [row["class_id"] for row in enrollments.data]
+
+    if not class_ids:
+        return []
+
+    classes = (
+        supabase
+        .table("classes")
+        .select("*")
+        .in_("id", class_ids)
+        .execute()
+    )
+
+    return [attach_students_to_class(cls) for cls in classes.data]
 
 
 # -------------------------
@@ -107,15 +128,19 @@ def get_classes(
 def get_class(
     class_id: str,
     uid: str = Query(..., description="User UID"),
-    role: str = Query(..., description="admin | teacher | student"),
 ):
+    user = require_admin_or_teacher_by_uuid(uid)
+
     result = supabase.table("classes").select("*").eq("id", class_id).execute()
     if not result.data:
         raise HTTPException(status_code=404, detail="Class not found")
 
     class_obj = result.data[0]
 
-    if role == "student":
+    if user["role"] == "teacher" and class_obj["teacher_id"] != uid:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    if user["role"] == "student":
         enrollment = (
             supabase
             .table("class_students")
@@ -126,9 +151,6 @@ def get_class(
         )
         if not enrollment.data:
             raise HTTPException(status_code=403, detail="Not enrolled in this class")
-
-    if role == "teacher" and class_obj["teacher_id"] != uid:
-        raise HTTPException(status_code=403, detail="Access denied")
 
     return attach_students_to_class(class_obj)
 
