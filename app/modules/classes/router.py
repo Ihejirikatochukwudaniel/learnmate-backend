@@ -122,6 +122,39 @@ def get_classes(
 
 
 # -------------------------
+# GET STUDENT'S ENROLLED CLASSES
+# -------------------------
+@router.get("/student/{student_id}", response_model=list[dict])
+def get_student_classes(
+    student_id: str,
+):
+    # Get all class enrollments for the student
+    enrollments = (
+        supabase
+        .table("class_students")
+        .select("class_id")
+        .eq("student_id", student_id)
+        .execute()
+    )
+
+    class_ids = [row["class_id"] for row in enrollments.data]
+
+    if not class_ids:
+        return []
+
+    # Get all classes the student is enrolled in
+    classes = (
+        supabase
+        .table("classes")
+        .select("*")
+        .in_("id", class_ids)
+        .execute()
+    )
+
+    return [attach_students_to_class(cls) for cls in classes.data]
+
+
+# -------------------------
 # GET SINGLE CLASS
 # -------------------------
 @router.get("/{class_id}", response_model=dict)
