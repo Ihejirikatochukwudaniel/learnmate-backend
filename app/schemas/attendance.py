@@ -3,7 +3,7 @@ from typing import Optional, List
 from datetime import date, datetime
 
 class AttendanceCreate(BaseModel):
-    class_id: int
+    class_id: str
     student_id: str
     date: date
     status: str  # 'present', 'absent', 'late'
@@ -13,7 +13,7 @@ class AttendanceUpdate(BaseModel):
 
 class AttendanceResponse(BaseModel):
     id: int
-    class_id: int
+    class_id: str
     student_id: str
     date: date
     status: str

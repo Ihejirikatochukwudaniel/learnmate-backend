@@ -79,7 +79,7 @@ def mark_bulk_attendance(bulk_data: AttendanceBulkCreate, user: dict = Depends(r
         raise HTTPException(status_code=400, detail=str(e))
 
 @router.get("/class/{class_id}", response_model=List[AttendanceResponse])
-def get_class_attendance(class_id: int, date: str = None, user: dict = Depends(require_admin_or_teacher_by_uuid)):
+def get_class_attendance(class_id: str, date: str = None, user: dict = Depends(require_admin_or_teacher_by_uuid)):
     """
     Get attendance for a class. Admin or teacher of the class.
     Optional date filter: YYYY-MM-DD format.
@@ -174,7 +174,7 @@ def delete_attendance(attendance_id: int, user: dict = Depends(require_admin_or_
         raise HTTPException(status_code=400, detail=str(e))
 
 @router.get("/class/{class_id}/summary", response_model=dict)
-def get_attendance_summary(class_id: int, date: str = None, user: dict = Depends(require_admin_or_teacher_by_uuid)):
+def get_attendance_summary(class_id: str, date: str = None, user: dict = Depends(require_admin_or_teacher_by_uuid)):
     """
     Get attendance summary for a class. Admin or teacher of the class.
     Shows total students, present count, absent count, and percentage.
