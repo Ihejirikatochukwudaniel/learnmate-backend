@@ -1,7 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from app.db.supabase import supabase
 from app.schemas.attendance import AttendanceCreate, AttendanceUpdate, AttendanceResponse, AttendanceBulkCreate
-from app.core.dependencies import require_teacher, require_admin_or_teacher
+from app.core.dependencies import require_admin_or_teacher_by_uuid
 from app.core.security import get_current_user
 from datetime import datetime
 from typing import List
@@ -9,7 +9,7 @@ from typing import List
 router = APIRouter(tags=["Attendance"])
 
 @router.post("/", response_model=AttendanceResponse)
-def mark_attendance(attendance: AttendanceCreate, user: dict = Depends(require_admin_or_teacher)):
+def mark_attendance(attendance: AttendanceCreate, user: dict = Depends(require_admin_or_teacher_by_uuid)):
     """
     Mark attendance for a student. Admin or teacher of the class.
     """
@@ -42,7 +42,7 @@ def mark_attendance(attendance: AttendanceCreate, user: dict = Depends(require_a
         raise HTTPException(status_code=400, detail=str(e))
 
 @router.post("/bulk", response_model=List[AttendanceResponse])
-def mark_bulk_attendance(bulk_data: AttendanceBulkCreate, user: dict = Depends(require_admin_or_teacher)):
+def mark_bulk_attendance(bulk_data: AttendanceBulkCreate, user: dict = Depends(require_admin_or_teacher_by_uuid)):
     """
     Mark attendance for multiple students at once. Admin or teacher of the class.
     """
@@ -79,7 +79,7 @@ def mark_bulk_attendance(bulk_data: AttendanceBulkCreate, user: dict = Depends(r
         raise HTTPException(status_code=400, detail=str(e))
 
 @router.get("/class/{class_id}", response_model=List[AttendanceResponse])
-def get_class_attendance(class_id: int, date: str = None, user: dict = Depends(require_admin_or_teacher)):
+def get_class_attendance(class_id: int, date: str = None, user: dict = Depends(require_admin_or_teacher_by_uuid)):
     """
     Get attendance for a class. Admin or teacher of the class.
     Optional date filter: YYYY-MM-DD format.
@@ -103,15 +103,14 @@ def get_class_attendance(class_id: int, date: str = None, user: dict = Depends(r
         raise HTTPException(status_code=400, detail=str(e))
 
 @router.get("/student/{student_id}", response_model=List[AttendanceResponse])
-def get_student_attendance(student_id: str, user: dict = Depends(get_current_user)):
+def get_student_attendance(student_id: str, user: dict = Depends(require_admin_or_teacher_by_uuid)):
     """
-    Get attendance for a student. Student can only view their own, teachers can view their students.
+    Get attendance for a student. Admin or teacher can view attendance.
+    Pass user UUID as query parameter.
     """
     try:
-        # Check permissions
-        if user["role"] == "student" and user["id"] != student_id:
-            raise HTTPException(status_code=403, detail="Access denied")
-        elif user["role"] == "teacher":
+        # Teachers can only view students in their classes
+        if user["role"] == "teacher":
             # Check if student is in teacher's class
             enrollments = supabase.table("class_students").select("class_id").eq("student_id", student_id).execute()
             class_ids = [e["class_id"] for e in enrollments.data]
@@ -128,7 +127,7 @@ def get_student_attendance(student_id: str, user: dict = Depends(get_current_use
         raise HTTPException(status_code=400, detail=str(e))
 
 @router.put("/{attendance_id}", response_model=AttendanceResponse)
-def update_attendance(attendance_id: int, attendance: AttendanceUpdate, user: dict = Depends(require_admin_or_teacher)):
+def update_attendance(attendance_id: int, attendance: AttendanceUpdate, user: dict = Depends(require_admin_or_teacher_by_uuid)):
     """
     Update attendance record. Admin or teacher of the class.
     """
@@ -151,7 +150,7 @@ def update_attendance(attendance_id: int, attendance: AttendanceUpdate, user: di
         raise HTTPException(status_code=400, detail=str(e))
 
 @router.delete("/{attendance_id}")
-def delete_attendance(attendance_id: int, user: dict = Depends(require_admin_or_teacher)):
+def delete_attendance(attendance_id: int, user: dict = Depends(require_admin_or_teacher_by_uuid)):
     """
     Delete attendance record. Admin or teacher of the class.
     """
@@ -175,7 +174,7 @@ def delete_attendance(attendance_id: int, user: dict = Depends(require_admin_or_
         raise HTTPException(status_code=400, detail=str(e))
 
 @router.get("/class/{class_id}/summary", response_model=dict)
-def get_attendance_summary(class_id: int, date: str = None, user: dict = Depends(require_admin_or_teacher)):
+def get_attendance_summary(class_id: int, date: str = None, user: dict = Depends(require_admin_or_teacher_by_uuid)):
     """
     Get attendance summary for a class. Admin or teacher of the class.
     Shows total students, present count, absent count, and percentage.
