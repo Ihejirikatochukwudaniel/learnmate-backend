@@ -1,21 +1,18 @@
 from pydantic import BaseModel
-from typing import List, Literal
+from typing import List
 from datetime import date, datetime
 from uuid import UUID
-
-# Allowed attendance states
-AttendanceStatus = Literal["present", "absent", "late"]
 
 
 class AttendanceCreate(BaseModel):
     class_id: UUID
     student_id: UUID
     date: date
-    status: AttendanceStatus
+    status: bool
 
 
 class AttendanceUpdate(BaseModel):
-    status: AttendanceStatus
+    status: bool
 
 
 class AttendanceResponse(BaseModel):
@@ -23,7 +20,7 @@ class AttendanceResponse(BaseModel):
     class_id: UUID
     student_id: UUID
     date: date
-    status: AttendanceStatus
+    status: bool
     marked_by: UUID
     created_at: datetime
 
