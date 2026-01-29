@@ -53,11 +53,14 @@ def mark_attendance(
                 status_code=400, detail="Attendance already marked for this date"
             )
 
+        # Convert boolean to string status
+        status_str = "present" if attendance.status else "absent"
+
         attendance_data = {
             "class_id": class_id,
             "student_id": student_id,
             "date": str(attendance.date),
-            "status": attendance.status,
+            "status": status_str,
             "marked_by": user["id"],
             "created_at": datetime.utcnow().isoformat(),
         }
@@ -117,11 +120,14 @@ def mark_bulk_attendance(
                     errors.append(f"Attendance already exists for student {student_id} on {attendance.date}")
                     continue
 
+                # Convert boolean to string status
+                status_str = "present" if attendance.status else "absent"
+
                 attendance_data = {
                     "class_id": class_id,
                     "student_id": student_id,
                     "date": str(attendance.date),
-                    "status": attendance.status,
+                    "status": status_str,
                     "marked_by": user["id"],
                     "created_at": datetime.utcnow().isoformat(),
                 }
@@ -149,14 +155,15 @@ def mark_bulk_attendance(
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 
-@router.get("/class/{class_id}", response_model=List[AttendanceResponse])
+@router.get("/class/{class_id}", response_model=List[dict])
 def get_class_attendance(
     class_id: UUID,
     date: date_type | None = None,
     user: dict = Depends(require_admin_or_teacher_by_uuid),
 ):
     """
-    Get attendance for a class (optionally filtered by date).
+    Get attendance for a class grouped by date.
+    Returns attendance records grouped by date with all students for each date.
     """
     try:
         class_id_str = str(class_id)
@@ -178,7 +185,31 @@ def get_class_attendance(
             query = query.eq("date", str(date))
 
         result = query.execute()
-        return [AttendanceResponse(**row) for row in result.data]
+        
+        # Group attendance by date
+        grouped_by_date = {}
+        for record in result.data:
+            record_date = record["date"]
+            if record_date not in grouped_by_date:
+                grouped_by_date[record_date] = {
+                    "date": record_date,
+                    "class_id": record["class_id"],
+                    "students": []
+                }
+            
+            grouped_by_date[record_date]["students"].append({
+                "id": record["id"],
+                "student_id": record["student_id"],
+                "status": record["status"],
+                "marked_by": record["marked_by"],
+                "created_at": record["created_at"]
+            })
+        
+        # Convert to list and sort by date (most recent first)
+        grouped_list = list(grouped_by_date.values())
+        grouped_list.sort(key=lambda x: x["date"], reverse=True)
+        
+        return grouped_list
 
     except HTTPException:
         raise
@@ -261,9 +292,14 @@ def update_attendance(
         if user["role"] == "teacher" and teacher_id != user["id"]:
             raise HTTPException(status_code=403, detail="Access denied")
 
+        # Convert boolean to string if needed
+        status_value = attendance.status
+        if isinstance(status_value, bool):
+            status_value = "present" if status_value else "absent"
+
         result = (
             supabase.table("attendance")
-            .update({"status": attendance.status})
+            .update({"status": status_value})
             .eq("id", attendance_id_str)
             .execute()
         )
@@ -354,9 +390,9 @@ def get_attendance_summary(
             .execute()
         )
 
-        # Count based on boolean status (True = present, False = absent)
-        present_count = sum(1 for r in attendance_result.data if r["status"] is True)
-        absent_count = sum(1 for r in attendance_result.data if r["status"] is False)
+        # Count based on string status
+        present_count = sum(1 for r in attendance_result.data if r["status"] == "present")
+        absent_count = sum(1 for r in attendance_result.data if r["status"] == "absent")
         not_marked = total_students - (present_count + absent_count)
         percentage = (present_count / total_students * 100) if total_students else 0.0
 
