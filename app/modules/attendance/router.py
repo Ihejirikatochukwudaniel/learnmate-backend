@@ -53,14 +53,11 @@ def mark_attendance(
                 status_code=400, detail="Attendance already marked for this date"
             )
 
-        # Convert boolean to string status
-        status_str = "present" if attendance.status else "absent"
-
         attendance_data = {
             "class_id": class_id,
             "student_id": student_id,
             "date": str(attendance.date),
-            "status": status_str,
+            "status": attendance.status,  # Keep as boolean
             "marked_by": user["id"],
             "created_at": datetime.utcnow().isoformat(),
         }
@@ -120,14 +117,11 @@ def mark_bulk_attendance(
                     errors.append(f"Attendance already exists for student {student_id} on {attendance.date}")
                     continue
 
-                # Convert boolean to string status
-                status_str = "present" if attendance.status else "absent"
-
                 attendance_data = {
                     "class_id": class_id,
                     "student_id": student_id,
                     "date": str(attendance.date),
-                    "status": status_str,
+                    "status": attendance.status,  # Keep as boolean
                     "marked_by": user["id"],
                     "created_at": datetime.utcnow().isoformat(),
                 }
@@ -197,13 +191,11 @@ def get_class_attendance(
                     "students": []
                 }
             
-            # Convert string status back to boolean
-            status_bool = record["status"] == "present"
-            
+            # Status is already a boolean in the database
             grouped_by_date[record_date]["students"].append({
                 "id": record["id"],
                 "student_id": record["student_id"],
-                "status": status_bool,
+                "status": record["status"],  # Already boolean
                 "marked_by": record["marked_by"],
                 "created_at": record["created_at"]
             })
@@ -270,14 +262,9 @@ def update_attendance(
         if user["role"] == "teacher" and teacher_id != user["id"]:
             raise HTTPException(status_code=403, detail="Access denied")
 
-        # Convert boolean to string if needed
-        status_value = attendance.status
-        if isinstance(status_value, bool):
-            status_value = "present" if status_value else "absent"
-
         result = (
             supabase.table("attendance")
-            .update({"status": status_value})
+            .update({"status": attendance.status})  # Keep as boolean
             .eq("id", attendance_id_str)
             .execute()
         )
@@ -368,9 +355,9 @@ def get_attendance_summary(
             .execute()
         )
 
-        # Count based on string status
-        present_count = sum(1 for r in attendance_result.data if r["status"] == "present")
-        absent_count = sum(1 for r in attendance_result.data if r["status"] == "absent")
+        # Count based on boolean status (True = present, False = absent)
+        present_count = sum(1 for r in attendance_result.data if r["status"] is True)
+        absent_count = sum(1 for r in attendance_result.data if r["status"] is False)
         not_marked = total_students - (present_count + absent_count)
         percentage = (present_count / total_students * 100) if total_students else 0.0
 
