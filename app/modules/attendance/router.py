@@ -197,10 +197,13 @@ def get_class_attendance(
                     "students": []
                 }
             
+            # Convert string status back to boolean
+            status_bool = record["status"] == "present"
+            
             grouped_by_date[record_date]["students"].append({
                 "id": record["id"],
                 "student_id": record["student_id"],
-                "status": record["status"],
+                "status": status_bool,  # Now a boolean
                 "marked_by": record["marked_by"],
                 "created_at": record["created_at"]
             })
