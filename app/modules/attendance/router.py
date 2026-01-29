@@ -45,7 +45,7 @@ def mark_attendance(
             .select("id")
             .eq("class_id", class_id)
             .eq("student_id", student_id)
-            .eq("date", attendance.date)
+            .eq("date", str(attendance.date))
             .execute()
         )
         if existing.data:
@@ -56,7 +56,7 @@ def mark_attendance(
         attendance_data = {
             "class_id": class_id,
             "student_id": student_id,
-            "date": attendance.date,
+            "date": str(attendance.date),
             "status": attendance.status,
             "marked_by": user["id"],
             "created_at": datetime.utcnow().isoformat(),
@@ -67,7 +67,8 @@ def mark_attendance(
 
     except HTTPException:
         raise
-    except Exception:
+    except Exception as e:
+        print(f"Mark attendance error: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
@@ -81,52 +82,71 @@ def mark_bulk_attendance(
     """
     try:
         responses = []
+        errors = []
 
         for attendance in bulk_data.attendances:
-            class_id = str(attendance.class_id)
-            student_id = str(attendance.student_id)
+            try:
+                class_id = str(attendance.class_id)
+                student_id = str(attendance.student_id)
 
-            class_result = (
-                supabase.table("classes")
-                .select("id, teacher_id")
-                .eq("id", class_id)
-                .execute()
+                # Check class existence and permission
+                class_result = (
+                    supabase.table("classes")
+                    .select("id, teacher_id")
+                    .eq("id", class_id)
+                    .execute()
+                )
+                if not class_result.data:
+                    errors.append(f"Class {class_id} not found")
+                    continue
+
+                if user["role"] == "teacher" and class_result.data[0]["teacher_id"] != user["id"]:
+                    errors.append(f"Access denied for class {class_id}")
+                    continue
+
+                # Check for existing attendance
+                existing = (
+                    supabase.table("attendance")
+                    .select("id")
+                    .eq("class_id", class_id)
+                    .eq("student_id", student_id)
+                    .eq("date", str(attendance.date))
+                    .execute()
+                )
+                if existing.data:
+                    errors.append(f"Attendance already exists for student {student_id} on {attendance.date}")
+                    continue
+
+                attendance_data = {
+                    "class_id": class_id,
+                    "student_id": student_id,
+                    "date": str(attendance.date),
+                    "status": attendance.status,
+                    "marked_by": user["id"],
+                    "created_at": datetime.utcnow().isoformat(),
+                }
+
+                result = supabase.table("attendance").insert(attendance_data).execute()
+                responses.append(AttendanceResponse(**result.data[0]))
+                
+            except Exception as e:
+                errors.append(f"Error processing attendance for student {student_id}: {str(e)}")
+                continue
+
+        # If no records were processed successfully, raise an error with details
+        if not responses and errors:
+            raise HTTPException(
+                status_code=400, 
+                detail={"message": "Failed to process any attendance records", "errors": errors}
             )
-            if not class_result.data:
-                continue
-
-            if user["role"] == "teacher" and class_result.data[0]["teacher_id"] != user["id"]:
-                continue
-
-            existing = (
-                supabase.table("attendance")
-                .select("id")
-                .eq("class_id", class_id)
-                .eq("student_id", student_id)
-                .eq("date", attendance.date)
-                .execute()
-            )
-            if existing.data:
-                continue
-
-            attendance_data = {
-                "class_id": class_id,
-                "student_id": student_id,
-                "date": attendance.date,
-                "status": attendance.status,
-                "marked_by": user["id"],
-                "created_at": datetime.utcnow().isoformat(),
-            }
-
-            result = supabase.table("attendance").insert(attendance_data).execute()
-            responses.append(AttendanceResponse(**result.data[0]))
 
         return responses
 
     except HTTPException:
         raise
-    except Exception:
-        raise HTTPException(status_code=500, detail="Internal server error")
+    except Exception as e:
+        print(f"Bulk attendance error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 
 @router.get("/class/{class_id}", response_model=List[AttendanceResponse])
@@ -155,14 +175,15 @@ def get_class_attendance(
 
         query = supabase.table("attendance").select("*").eq("class_id", class_id_str)
         if date:
-            query = query.eq("date", date)
+            query = query.eq("date", str(date))
 
         result = query.execute()
         return [AttendanceResponse(**row) for row in result.data]
 
     except HTTPException:
         raise
-    except Exception:
+    except Exception as e:
+        print(f"Get class attendance error: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
@@ -210,7 +231,8 @@ def get_student_attendance(
 
     except HTTPException:
         raise
-    except Exception:
+    except Exception as e:
+        print(f"Get student attendance error: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
@@ -250,7 +272,8 @@ def update_attendance(
 
     except HTTPException:
         raise
-    except Exception:
+    except Exception as e:
+        print(f"Update attendance error: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
@@ -283,7 +306,8 @@ def delete_attendance(
 
     except HTTPException:
         raise
-    except Exception:
+    except Exception as e:
+        print(f"Delete attendance error: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
@@ -326,14 +350,14 @@ def get_attendance_summary(
             supabase.table("attendance")
             .select("status")
             .eq("class_id", class_id_str)
-            .eq("date", date)
+            .eq("date", str(date))
             .execute()
         )
 
-        present_count = sum(
-            1 for r in attendance_result.data if r["status"] == "present"
-        )
-        absent_count = total_students - present_count
+        # Count based on boolean status (True = present, False = absent)
+        present_count = sum(1 for r in attendance_result.data if r["status"] is True)
+        absent_count = sum(1 for r in attendance_result.data if r["status"] is False)
+        not_marked = total_students - (present_count + absent_count)
         percentage = (present_count / total_students * 100) if total_students else 0.0
 
         return {
@@ -342,10 +366,12 @@ def get_attendance_summary(
             "total_students": total_students,
             "present_count": present_count,
             "absent_count": absent_count,
+            "not_marked_count": not_marked,
             "attendance_percentage": round(percentage, 2),
         }
 
     except HTTPException:
         raise
-    except Exception:
+    except Exception as e:
+        print(f"Attendance summary error: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
