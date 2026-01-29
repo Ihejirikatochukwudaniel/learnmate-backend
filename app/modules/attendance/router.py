@@ -203,7 +203,7 @@ def get_class_attendance(
             grouped_by_date[record_date]["students"].append({
                 "id": record["id"],
                 "student_id": record["student_id"],
-                "status": status_bool,  # Now a boolean
+                "status": status_bool,
                 "marked_by": record["marked_by"],
                 "created_at": record["created_at"]
             })
@@ -222,37 +222,12 @@ def get_class_attendance(
 
 
 @router.get("/student/{student_id}", response_model=List[AttendanceResponse])
-def get_student_attendance(
-    student_id: UUID,
-    user: dict = Depends(require_admin_or_teacher_by_uuid),
-):
+def get_student_attendance(student_id: UUID):
     """
-    Get attendance for a student.
+    Get attendance for a student. Public endpoint for student dashboard.
     """
     try:
         student_id_str = str(student_id)
-
-        if user["role"] == "teacher":
-            enrollments = (
-                supabase.table("class_students")
-                .select("class_id")
-                .eq("student_id", student_id_str)
-                .execute()
-            )
-            class_ids = [e["class_id"] for e in enrollments.data]
-
-            if not class_ids:
-                return []
-
-            teacher_classes = (
-                supabase.table("classes")
-                .select("id")
-                .eq("teacher_id", user["id"])
-                .in_("id", class_ids)
-                .execute()
-            )
-            if not teacher_classes.data:
-                raise HTTPException(status_code=403, detail="Access denied")
 
         result = (
             supabase.table("attendance")
