@@ -1,6 +1,7 @@
 from pydantic import BaseModel
 from typing import Optional
 from datetime import date, datetime
+from uuid import UUID
 
 class AssignmentCreate(BaseModel):
     class_id: int
@@ -23,5 +24,6 @@ class AssignmentResponse(BaseModel):
     due_date: Optional[date] = None
     file_url: Optional[str] = None
     created_by: str
+    school_id: UUID
     created_at: datetime
     updated_at: datetime

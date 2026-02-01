@@ -6,7 +6,7 @@ from app.schemas.attendance import (
     AttendanceResponse,
     AttendanceBulkCreate,
 )
-from app.core.dependencies import require_admin_or_teacher_by_uuid
+from app.core.dependencies import get_current_school_id, require_admin_or_teacher_by_uuid
 from datetime import datetime, date as date_type
 from typing import List
 from uuid import UUID
@@ -17,26 +17,28 @@ router = APIRouter(tags=["Attendance"])
 @router.post("/", response_model=AttendanceResponse)
 def mark_attendance(
     attendance: AttendanceCreate,
-    user: dict = Depends(require_admin_or_teacher_by_uuid),
+    school_id: UUID = Depends(get_current_school_id),
+    current_user: dict = Depends(require_admin_or_teacher_by_uuid),
 ):
     """
-    Mark attendance for a student. Admin or teacher of the class.
+    Mark attendance for a student. Admin or teacher of the class, scoped to school.
     """
     try:
         class_id = str(attendance.class_id)
         student_id = str(attendance.student_id)
 
-        # Check class existence and permission
+        # Check class existence and permission, scoped to school
         class_result = (
             supabase.table("classes")
             .select("id, teacher_id")
             .eq("id", class_id)
+            .eq("school_id", str(school_id))
             .execute()
         )
         if not class_result.data:
             raise HTTPException(status_code=404, detail="Class not found")
 
-        if user["role"] == "teacher" and class_result.data[0]["teacher_id"] != user["id"]:
+        if current_user["role"] == "teacher" and class_result.data[0]["teacher_id"] != current_user["id"]:
             raise HTTPException(status_code=403, detail="Access denied")
 
         # Check for existing attendance
@@ -58,7 +60,8 @@ def mark_attendance(
             "student_id": student_id,
             "date": str(attendance.date),
             "status": attendance.status,  # Keep as boolean
-            "marked_by": user["id"],
+            "marked_by": current_user["id"],
+            "school_id": str(school_id),
             "created_at": datetime.utcnow().isoformat(),
         }
 
@@ -75,10 +78,11 @@ def mark_attendance(
 @router.post("/bulk", response_model=List[AttendanceResponse])
 def mark_bulk_attendance(
     bulk_data: AttendanceBulkCreate,
+    school_id: UUID = Depends(get_current_school_id),
     user: dict = Depends(require_admin_or_teacher_by_uuid),
 ):
     """
-    Mark attendance for multiple students at once.
+    Mark attendance for multiple students at once, scoped to school.
     """
     try:
         responses = []
@@ -89,11 +93,12 @@ def mark_bulk_attendance(
                 class_id = str(attendance.class_id)
                 student_id = str(attendance.student_id)
 
-                # Check class existence and permission
+                # Check class existence and permission, scoped to school
                 class_result = (
                     supabase.table("classes")
                     .select("id, teacher_id")
                     .eq("id", class_id)
+                    .eq("school_id", str(school_id))
                     .execute()
                 )
                 if not class_result.data:
@@ -123,6 +128,7 @@ def mark_bulk_attendance(
                     "date": str(attendance.date),
                     "status": attendance.status,  # Keep as boolean
                     "marked_by": user["id"],
+                    "school_id": str(school_id),
                     "created_at": datetime.utcnow().isoformat(),
                 }
 
@@ -153,10 +159,11 @@ def mark_bulk_attendance(
 def get_class_attendance(
     class_id: UUID,
     date: date_type | None = None,
+    school_id: UUID = Depends(get_current_school_id),
     user: dict = Depends(require_admin_or_teacher_by_uuid),
 ):
     """
-    Get attendance for a class grouped by date.
+    Get attendance for a class grouped by date, scoped to school.
     Returns attendance records grouped by date with all students for each date.
     """
     try:
@@ -166,6 +173,7 @@ def get_class_attendance(
             supabase.table("classes")
             .select("id, teacher_id")
             .eq("id", class_id_str)
+            .eq("school_id", str(school_id))
             .execute()
         )
         if not class_result.data:
@@ -174,7 +182,7 @@ def get_class_attendance(
         if user["role"] == "teacher" and class_result.data[0]["teacher_id"] != user["id"]:
             raise HTTPException(status_code=403, detail="Access denied")
 
-        query = supabase.table("attendance").select("*").eq("class_id", class_id_str)
+        query = supabase.table("attendance").select("*").eq("class_id", class_id_str).eq("school_id", str(school_id))
         if date:
             query = query.eq("date", str(date))
 
@@ -214,9 +222,12 @@ def get_class_attendance(
 
 
 @router.get("/student/{student_id}", response_model=List[AttendanceResponse])
-def get_student_attendance(student_id: UUID):
+def get_student_attendance(
+    student_id: UUID,
+    school_id: UUID = Depends(get_current_school_id),
+):
     """
-    Get attendance for a student. Public endpoint for student dashboard.
+    Get attendance for a student, scoped to school. Public endpoint for student dashboard.
     """
     try:
         student_id_str = str(student_id)
@@ -225,6 +236,7 @@ def get_student_attendance(student_id: UUID):
             supabase.table("attendance")
             .select("*")
             .eq("student_id", student_id_str)
+            .eq("school_id", str(school_id))
             .execute()
         )
 
@@ -241,31 +253,44 @@ def get_student_attendance(student_id: UUID):
 def update_attendance(
     attendance_id: UUID,
     attendance: AttendanceUpdate,
+    school_id: UUID = Depends(get_current_school_id),
     user: dict = Depends(require_admin_or_teacher_by_uuid),
 ):
     """
-    Update attendance record.
+    Update attendance record, scoped to school.
     """
     try:
         attendance_id_str = str(attendance_id)
 
         existing = (
             supabase.table("attendance")
-            .select("id, classes(teacher_id)")
+            .select("id, class_id, school_id")
             .eq("id", attendance_id_str)
+            .eq("school_id", str(school_id))
             .execute()
         )
         if not existing.data:
             raise HTTPException(status_code=404, detail="Attendance record not found")
 
-        teacher_id = existing.data[0]["classes"]["teacher_id"]
-        if user["role"] == "teacher" and teacher_id != user["id"]:
+        # Verify the class belongs to the user's school and check permissions
+        class_result = (
+            supabase.table("classes")
+            .select("teacher_id")
+            .eq("id", existing.data[0]["class_id"])
+            .eq("school_id", str(school_id))
+            .execute()
+        )
+        if not class_result.data:
+            raise HTTPException(status_code=404, detail="Class not found")
+
+        if user["role"] == "teacher" and class_result.data[0]["teacher_id"] != user["id"]:
             raise HTTPException(status_code=403, detail="Access denied")
 
         result = (
             supabase.table("attendance")
             .update({"status": attendance.status})  # Keep as boolean
             .eq("id", attendance_id_str)
+            .eq("school_id", str(school_id))
             .execute()
         )
 
@@ -281,28 +306,40 @@ def update_attendance(
 @router.delete("/{attendance_id}")
 def delete_attendance(
     attendance_id: UUID,
+    school_id: UUID = Depends(get_current_school_id),
     user: dict = Depends(require_admin_or_teacher_by_uuid),
 ):
     """
-    Delete attendance record.
+    Delete attendance record, scoped to school.
     """
     try:
         attendance_id_str = str(attendance_id)
 
         existing = (
             supabase.table("attendance")
-            .select("id, classes(teacher_id)")
+            .select("id, class_id, school_id")
             .eq("id", attendance_id_str)
+            .eq("school_id", str(school_id))
             .execute()
         )
         if not existing.data:
             raise HTTPException(status_code=404, detail="Attendance record not found")
 
-        teacher_id = existing.data[0]["classes"]["teacher_id"]
-        if user["role"] == "teacher" and teacher_id != user["id"]:
+        # Verify the class belongs to the user's school and check permissions
+        class_result = (
+            supabase.table("classes")
+            .select("teacher_id")
+            .eq("id", existing.data[0]["class_id"])
+            .eq("school_id", str(school_id))
+            .execute()
+        )
+        if not class_result.data:
+            raise HTTPException(status_code=404, detail="Class not found")
+
+        if user["role"] == "teacher" and class_result.data[0]["teacher_id"] != user["id"]:
             raise HTTPException(status_code=403, detail="Access denied")
 
-        supabase.table("attendance").delete().eq("id", attendance_id_str).execute()
+        supabase.table("attendance").delete().eq("id", attendance_id_str).eq("school_id", str(school_id)).execute()
         return {"message": "Attendance record deleted"}
 
     except HTTPException:
@@ -316,10 +353,11 @@ def delete_attendance(
 def get_attendance_summary(
     class_id: UUID,
     date: date_type | None = None,
+    school_id: UUID = Depends(get_current_school_id),
     user: dict = Depends(require_admin_or_teacher_by_uuid),
 ):
     """
-    Get attendance summary for a class.
+    Get attendance summary for a class, scoped to school.
     """
     try:
         class_id_str = str(class_id)
@@ -328,6 +366,7 @@ def get_attendance_summary(
             supabase.table("classes")
             .select("id, teacher_id")
             .eq("id", class_id_str)
+            .eq("school_id", str(school_id))
             .execute()
         )
         if not class_result.data:
@@ -351,6 +390,7 @@ def get_attendance_summary(
             supabase.table("attendance")
             .select("status")
             .eq("class_id", class_id_str)
+            .eq("school_id", str(school_id))
             .eq("date", str(date))
             .execute()
         )

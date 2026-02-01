@@ -1,57 +1,33 @@
 import os
-import jwt
-from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi import Depends, HTTPException, status, Query
 from app.db.supabase import supabase
 from app.core.config import settings
+from uuid import UUID
 
-security = HTTPBearer()
-
-def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+def get_current_user(user_id: str = Query(..., description="User UUID for authentication")):
     """
-    Validates Supabase JWT token and returns user profile information.
+    Fetches user profile information by UUID.
 
     Args:
-        credentials: HTTP authorization credentials containing the Bearer token
+        user_id: User UUID from query parameter
 
     Returns:
         dict: User profile data with id, email, role, and full_name
 
     Raises:
-        HTTPException: 401 if token is invalid, expired, or user profile not found
+        HTTPException: 401 if user profile not found
     """
-    # Use dummy data for testing if USE_REAL_JWT is false
-    if not settings.USE_REAL_JWT:
-        return get_dummy_user()
-
-    # Validate authorization scheme
-    if not credentials or credentials.scheme.lower() != "bearer":
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or missing authorization header. Use 'Bearer <token>'"
-        )
-
-    token = credentials.credentials
-
-    if not token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing access token"
-        )
-
     try:
-        # Decode JWT to extract user_id (sub claim) without signature verification
-        # Supabase JWT role is always "authenticated", not the actual user role
-        payload = jwt.decode(token, options={"verify_signature": False})
-        user_id = payload.get("sub")
-
-        if not user_id:
+        # Validate UUID format
+        try:
+            UUID(user_id)
+        except ValueError:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token: missing user ID"
+                detail="Invalid UUID format"
             )
 
-        # Fetch fresh user profile from profiles table
+        # Fetch user profile from profiles table
         profile_response = supabase.table("profiles").select("id, full_name, email, role").eq("id", user_id).execute()
 
         if not profile_response.data or len(profile_response.data) == 0:
@@ -83,18 +59,5 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
         # Catch any other exceptions (network issues, Supabase errors, etc.)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authentication failed. Please check your token and try again."
+            detail="Authentication failed. Please check your UUID and try again."
         )
-
-# Dummy testing fallback (only used when USE_REAL_JWT=false)
-def get_dummy_user():
-    """
-    Returns dummy user data for testing purposes.
-    Only used when USE_REAL_JWT is set to false.
-    """
-    return {
-        "id": "test-user-id",
-        "email": "test@example.com",
-        "role": "student",
-        "full_name": "Test User"
-    }

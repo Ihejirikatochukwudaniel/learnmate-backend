@@ -1,6 +1,7 @@
 from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
+from uuid import UUID
 
 class GradeCreate(BaseModel):
     submission_id: int
@@ -17,4 +18,5 @@ class GradeResponse(BaseModel):
     grade: str
     feedback: Optional[str] = None
     graded_by: str
+    school_id: UUID
     graded_at: datetime

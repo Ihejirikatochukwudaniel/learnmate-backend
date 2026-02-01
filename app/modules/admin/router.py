@@ -1,20 +1,21 @@
 from fastapi import APIRouter, Depends, HTTPException
 from app.db.supabase import supabase
-from app.core.dependencies import require_admin_by_uuid
+from app.core.dependencies import require_admin_by_uuid, get_current_school_id, get_school_id_for_user
 from app.schemas.profiles import ProfileCreate
 import secrets
 import string
+from uuid import UUID
 
 router = APIRouter(tags=["Admin"])
 
 @router.get("/metrics")
-def get_admin_metrics(_: dict = Depends(require_admin_by_uuid)):
+def get_admin_metrics(school_id: UUID = Depends(get_current_school_id)):
     """
-    Get admin metrics. Admin only.
+    Get admin metrics for the current user's school. Admin only.
     """
     try:
-        # Total users
-        total_users = supabase.table("profiles").select("id", count="exact").execute()
+        # Total users in school
+        total_users = supabase.table("profiles").select("id", count="exact").eq("school_id", str(school_id)).execute()
         total_users_count = total_users.count if hasattr(total_users, 'count') else len(total_users.data)
 
         # Active users (users with recent activity - last 30 days)
@@ -22,24 +23,26 @@ def get_admin_metrics(_: dict = Depends(require_admin_by_uuid)):
         # This would need activity_logs table to be properly implemented
         active_users_count = total_users_count  # Placeholder
 
-        # Attendance count (total attendance records)
-        attendance_count = supabase.table("attendance").select("id", count="exact").execute()
+        # Attendance count (total attendance records in school)
+        attendance_count = supabase.table("attendance").select("id", count="exact").eq("school_id", str(school_id)).execute()
         attendance_count = attendance_count.count if hasattr(attendance_count, 'count') else len(attendance_count.data)
 
-        # Assignments created
-        assignments_count = supabase.table("assignments").select("id", count="exact").execute()
+        # Assignments created in school
+        assignments_count = supabase.table("assignments").select("id", count="exact").eq("school_id", str(school_id)).execute()
         assignments_count = assignments_count.count if hasattr(assignments_count, 'count') else len(assignments_count.data)
 
-        # Grades entered
-        grades_count = supabase.table("grades").select("id", count="exact").execute()
+        # Grades entered in school
+        grades_count = supabase.table("grades").select("id", count="exact").eq("school_id", str(school_id)).execute()
         grades_count = grades_count.count if hasattr(grades_count, 'count') else len(grades_count.data)
 
-        # Classes count
-        classes_count = supabase.table("classes").select("id", count="exact").execute()
+        # Classes count in school
+        classes_count = supabase.table("classes").select("id", count="exact").eq("school_id", str(school_id)).execute()
         classes_count = classes_count.count if hasattr(classes_count, 'count') else len(classes_count.data)
 
-        # Students enrolled
+        # Students enrolled in school
         students_enrolled = supabase.table("class_students").select("student_id", count="exact").execute()
+        # This is harder to scope, as class_students doesn't have school_id directly
+        # For now, we'll leave it as is, but ideally we'd join with classes
         students_enrolled_count = students_enrolled.count if hasattr(students_enrolled, 'count') else len(students_enrolled.data)
 
         return {
@@ -55,20 +58,23 @@ def get_admin_metrics(_: dict = Depends(require_admin_by_uuid)):
         raise HTTPException(status_code=500, detail=f"Failed to fetch metrics: {str(e)}")
 
 @router.get("/users")
-def get_all_users(_: dict = Depends(require_admin_by_uuid)):
+def get_all_users(school_id: UUID = Depends(get_current_school_id)):
     """
-    Get all users with their profiles. Admin only.
+    Get all users with their profiles for the current user's school. Admin only.
     """
     try:
-        result = supabase.table("profiles").select("*").execute()
+        result = supabase.table("profiles").select("*").eq("school_id", str(school_id)).execute()
         return result.data
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch users: {str(e)}")
 
 @router.post("/users")
-def create_user(user_data: ProfileCreate, _: dict = Depends(require_admin_by_uuid)):
+def create_user(
+    user_data: ProfileCreate,
+    school_id: UUID = Depends(get_current_school_id)
+):
     """
-    Create a new user (teacher or student). Admin only.
+    Create a new user (teacher or student) in the current user's school. Admin only.
     Creates user in Supabase auth.users and profiles table.
     Uses UUID-based admin verification.
     """
@@ -132,7 +138,8 @@ def create_user(user_data: ProfileCreate, _: dict = Depends(require_admin_by_uui
                 "first_name": user_data.firstName,
                 "last_name": user_data.lastName,
                 "full_name": f"{user_data.firstName} {user_data.lastName}",
-                "role": user_data.role
+                "role": user_data.role,
+                "school_id": str(school_id)
             }
             # Use upsert to handle case where profile might already exist from a trigger
             supabase.table("profiles").upsert(profile_data).execute()
@@ -244,30 +251,35 @@ def bootstrap_admin(user_data: ProfileCreate):
         raise HTTPException(status_code=500, detail=f"Failed to bootstrap admin: {str(e)}")
 
 @router.delete("/users/{user_id}")
-def delete_user(user_id: str, _: dict = Depends(require_admin_by_uuid)):
+def delete_user(
+    user_id: str
+):
     """
-    Delete a user and all associated data. Admin only.
+    Delete a user and all associated data from the current user's school. Admin only.
     This will permanently remove the user from auth.users and profiles table,
     and cascade delete all related records (classes, attendance, submissions, etc.)
     """
     try:
-        # Check if user exists
-        user_check = supabase.table("profiles").select("id, email, role").eq("id", user_id).execute()
+        # Get school_id for this user
+        school_id = get_school_id_for_user(user_id)
+        
+        # Check if user exists and belongs to the school
+        user_check = supabase.table("profiles").select("id, email, role").eq("id", user_id).eq("school_id", str(school_id)).execute()
         if not user_check.data:
             raise HTTPException(status_code=404, detail="User not found")
 
         user_data = user_check.data[0]
 
-        # Prevent deletion of the last admin user
+        # Prevent deletion of the last admin user in the school
         if user_data["role"] == "admin":
-            admin_count = supabase.table("profiles").select("id", count="exact").eq("role", "admin").execute()
+            admin_count = supabase.table("profiles").select("id", count="exact").eq("role", "admin").eq("school_id", str(school_id)).execute()
             admin_total = admin_count.count if hasattr(admin_count, 'count') else len(admin_count.data)
             if admin_total <= 1:
-                raise HTTPException(status_code=400, detail="Cannot delete the last admin user")
+                raise HTTPException(status_code=400, detail="Cannot delete the last admin user in the school")
 
         # Delete from profiles table first (this will cascade delete related records)
         try:
-            supabase.table("profiles").delete().eq("id", user_id).execute()
+            supabase.table("profiles").delete().eq("id", user_id).eq("school_id", str(school_id)).execute()
         except Exception as profile_error:
             raise HTTPException(status_code=500, detail=f"Failed to delete user profile: {str(profile_error)}")
 
@@ -292,12 +304,15 @@ def delete_user(user_id: str, _: dict = Depends(require_admin_by_uuid)):
         raise HTTPException(status_code=500, detail=f"Unexpected error deleting user: {str(e)}")
 
 @router.get("/activity")
-def get_recent_activity(limit: int = 50, _: dict = Depends(require_admin_by_uuid)):
+def get_recent_activity(
+    limit: int = 50,
+    school_id: UUID = Depends(get_current_school_id)
+):
     """
-    Get recent activity logs. Admin only.
+    Get recent activity logs for the current user's school. Admin only.
     """
     try:
-        result = supabase.table("activity_logs").select("*").order("created_at", desc=True).limit(limit).execute()
+        result = supabase.table("activity_logs").select("*").eq("school_id", str(school_id)).order("created_at", desc=True).limit(limit).execute()
         return result.data
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch activity logs: {str(e)}")

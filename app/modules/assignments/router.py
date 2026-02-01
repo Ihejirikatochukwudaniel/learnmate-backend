@@ -1,20 +1,25 @@
 from fastapi import APIRouter, Depends, HTTPException
 from app.db.supabase import supabase
 from app.schemas.assignments import AssignmentCreate, AssignmentUpdate, AssignmentResponse
-from app.core.dependencies import require_teacher, require_admin_or_teacher
+from app.core.dependencies import require_teacher, require_admin_or_teacher, get_current_school_id
 from app.core.security import get_current_user
 from datetime import datetime
+from uuid import UUID
 
 router = APIRouter(tags=["Assignments"])
 
 @router.post("/", response_model=AssignmentResponse)
-def create_assignment(assignment: AssignmentCreate, user: dict = Depends(require_admin_or_teacher)):
+def create_assignment(
+    assignment: AssignmentCreate,
+    school_id: UUID = Depends(get_current_school_id),
+    user: dict = Depends(require_admin_or_teacher)
+):
     """
-    Create a new assignment. Admin or teacher of the class.
+    Create a new assignment. Admin or teacher of the class, scoped to school.
     """
     try:
-        # Check if class exists and user has permission
-        class_result = supabase.table("classes").select("*").eq("id", assignment.class_id).execute()
+        # Check if class exists and user has permission, scoped to school
+        class_result = supabase.table("classes").select("*").eq("id", assignment.class_id).eq("school_id", str(school_id)).execute()
         if not class_result.data:
             raise HTTPException(status_code=404, detail="Class not found")
 
@@ -28,6 +33,7 @@ def create_assignment(assignment: AssignmentCreate, user: dict = Depends(require
             "due_date": assignment.due_date.isoformat() if assignment.due_date else None,
             "file_url": assignment.file_url,
             "created_by": user["id"],
+            "school_id": str(school_id),
             "created_at": datetime.utcnow().isoformat(),
             "updated_at": datetime.utcnow().isoformat()
         }
@@ -38,13 +44,17 @@ def create_assignment(assignment: AssignmentCreate, user: dict = Depends(require
         raise HTTPException(status_code=400, detail=str(e))
 
 @router.get("/class/{class_id}", response_model=list[AssignmentResponse])
-def get_class_assignments(class_id: int, user: dict = Depends(get_current_user)):
+def get_class_assignments(
+    class_id: int,
+    school_id: UUID = Depends(get_current_school_id),
+    user: dict = Depends(get_current_user)
+):
     """
-    Get assignments for a class. Students must be enrolled, teachers must teach the class.
+    Get assignments for a class, scoped to school. Students must be enrolled, teachers must teach the class.
     """
     try:
-        # Check if class exists
-        class_result = supabase.table("classes").select("*").eq("id", class_id).execute()
+        # Check if class exists, scoped to school
+        class_result = supabase.table("classes").select("*").eq("id", class_id).eq("school_id", str(school_id)).execute()
         if not class_result.data:
             raise HTTPException(status_code=404, detail="Class not found")
 
@@ -57,19 +67,23 @@ def get_class_assignments(class_id: int, user: dict = Depends(get_current_user))
         elif user["role"] == "teacher" and class_result.data[0]["teacher_id"] != user["id"]:
             raise HTTPException(status_code=403, detail="Access denied")
 
-        result = supabase.table("assignments").select("*").eq("class_id", class_id).execute()
+        result = supabase.table("assignments").select("*").eq("class_id", class_id).eq("school_id", str(school_id)).execute()
         return [AssignmentResponse(**assignment) for assignment in result.data]
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 @router.get("/{assignment_id}", response_model=AssignmentResponse)
-def get_assignment(assignment_id: int, user: dict = Depends(get_current_user)):
+def get_assignment(
+    assignment_id: int,
+    school_id: UUID = Depends(get_current_school_id),
+    user: dict = Depends(get_current_user)
+):
     """
-    Get specific assignment by ID.
+    Get specific assignment by ID, scoped to school.
     """
     try:
-        # Get assignment with class info
-        result = supabase.table("assignments").select("*, classes(teacher_id)").eq("id", assignment_id).execute()
+        # Get assignment with class info, scoped to school
+        result = supabase.table("assignments").select("*, classes(teacher_id)").eq("id", assignment_id).eq("school_id", str(school_id)).execute()
         if not result.data:
             raise HTTPException(status_code=404, detail="Assignment not found")
 
@@ -93,13 +107,18 @@ def get_assignment(assignment_id: int, user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=400, detail=str(e))
 
 @router.put("/{assignment_id}", response_model=AssignmentResponse)
-def update_assignment(assignment_id: int, assignment: AssignmentUpdate, user: dict = Depends(require_admin_or_teacher)):
+def update_assignment(
+    assignment_id: int,
+    assignment: AssignmentUpdate,
+    school_id: UUID = Depends(get_current_school_id),
+    user: dict = Depends(require_admin_or_teacher)
+):
     """
-    Update assignment. Admin or teacher of the class.
+    Update assignment, scoped to school. Admin or teacher of the class.
     """
     try:
-        # Get assignment with class info
-        existing = supabase.table("assignments").select("*, classes(teacher_id)").eq("id", assignment_id).execute()
+        # Get assignment with class info, scoped to school
+        existing = supabase.table("assignments").select("*, classes(teacher_id)").eq("id", assignment_id).eq("school_id", str(school_id)).execute()
         if not existing.data:
             raise HTTPException(status_code=404, detail="Assignment not found")
 
@@ -119,19 +138,23 @@ def update_assignment(assignment_id: int, assignment: AssignmentUpdate, user: di
         if assignment.file_url is not None:
             update_data["file_url"] = assignment.file_url
 
-        result = supabase.table("assignments").update(update_data).eq("id", assignment_id).execute()
+        result = supabase.table("assignments").update(update_data).eq("id", assignment_id).eq("school_id", str(school_id)).execute()
         return AssignmentResponse(**result.data[0])
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 @router.delete("/{assignment_id}")
-def delete_assignment(assignment_id: int, user: dict = Depends(require_admin_or_teacher)):
+def delete_assignment(
+    assignment_id: int,
+    school_id: UUID = Depends(get_current_school_id),
+    user: dict = Depends(require_admin_or_teacher)
+):
     """
-    Delete assignment. Admin or teacher of the class.
+    Delete assignment, scoped to school. Admin or teacher of the class.
     """
     try:
-        # Get assignment with class info
-        existing = supabase.table("assignments").select("*, classes(teacher_id)").eq("id", assignment_id).execute()
+        # Get assignment with class info, scoped to school
+        existing = supabase.table("assignments").select("*, classes(teacher_id)").eq("id", assignment_id).eq("school_id", str(school_id)).execute()
         if not existing.data:
             raise HTTPException(status_code=404, detail="Assignment not found")
 
@@ -141,7 +164,7 @@ def delete_assignment(assignment_id: int, user: dict = Depends(require_admin_or_
         if user["role"] == "teacher" and teacher_id != user["id"]:
             raise HTTPException(status_code=403, detail="Access denied")
 
-        result = supabase.table("assignments").delete().eq("id", assignment_id).execute()
+        result = supabase.table("assignments").delete().eq("id", assignment_id).eq("school_id", str(school_id)).execute()
         if not result.data:
             raise HTTPException(status_code=404, detail="Assignment not found")
         return {"message": "Assignment deleted successfully"}

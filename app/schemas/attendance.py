@@ -22,6 +22,7 @@ class AttendanceResponse(BaseModel):
     date: date
     status: bool
     marked_by: UUID
+    school_id: UUID
     created_at: datetime
 
 

@@ -2,12 +2,14 @@ from fastapi import Depends, HTTPException, status, Query
 from app.core.security import get_current_user
 from app.db.supabase import supabase
 from typing import Dict
+from uuid import UUID
 
 def require_role(required_role: str):
     """
     Dependency to check if user has the required role.
     """
-    def role_checker(user: Dict = Depends(get_current_user)):
+    def role_checker(user_id: str = Query(..., description="User ID for authentication")):
+        user = get_current_user(user_id)
         if user.get("role") != required_role:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -16,20 +18,39 @@ def require_role(required_role: str):
         return user
     return role_checker
 
-def require_admin(user: Dict = Depends(get_current_user)):
+def require_admin(user_id: str = Query(..., description="User ID for authentication")):
     """Require admin role"""
-    return require_role("admin")(user)
+    user = get_current_user(user_id)
+    if user.get("role") != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. Admin role required"
+        )
+    return user
 
-def require_teacher(user: Dict = Depends(get_current_user)):
+def require_teacher(user_id: str = Query(..., description="User ID for authentication")):
     """Require teacher role"""
-    return require_role("teacher")(user)
+    user = get_current_user(user_id)
+    if user.get("role") != "teacher":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. Teacher role required"
+        )
+    return user
 
-def require_student(user: Dict = Depends(get_current_user)):
+def require_student(user_id: str = Query(..., description="User ID for authentication")):
     """Require student role"""
-    return require_role("student")(user)
+    user = get_current_user(user_id)
+    if user.get("role") != "student":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. Student role required"
+        )
+    return user
 
-def require_admin_or_teacher(user: Dict = Depends(get_current_user)):
+def require_admin_or_teacher(user_id: str = Query(..., description="User ID for authentication")):
     """Require admin or teacher role"""
+    user = get_current_user(user_id)
     if user.get("role") not in ["admin", "teacher"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -143,4 +164,77 @@ def require_admin_or_teacher_by_uuid(user_uuid: str = Query(..., description="UU
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to verify admin/teacher access"
+        )
+
+def get_current_school_id(user_id: str = Query(..., description="User ID for authentication")) -> UUID:
+    """
+    Dependency to get the current user's school_id from their profile.
+    Raises 403 if user has no school_id assigned.
+    
+    This version expects user_id as a Query parameter.
+    """
+    try:
+        # Validate user exists
+        user = get_current_user(user_id)
+        
+        # Fetch user's profile with school_id
+        profile_response = supabase.table("profiles").select("id, school_id").eq("id", user_id).execute()
+
+        if not profile_response.data or len(profile_response.data) == 0:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="User profile not found"
+            )
+
+        profile = profile_response.data[0]
+        school_id = profile.get("school_id")
+
+        if not school_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="User not assigned to a school"
+            )
+
+        return UUID(school_id)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to verify school access"
+        )
+
+def get_school_id_for_user(user_id: str) -> UUID:
+    """
+    Helper function to get school_id for a given user_id.
+    Use this when user_id is already available (e.g., from path parameter).
+    """
+    try:
+        # Fetch user's profile with school_id
+        profile_response = supabase.table("profiles").select("id, school_id").eq("id", user_id).execute()
+
+        if not profile_response.data or len(profile_response.data) == 0:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="User profile not found"
+            )
+
+        profile = profile_response.data[0]
+        school_id = profile.get("school_id")
+
+        if not school_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="User not assigned to a school"
+            )
+
+        return UUID(school_id)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to verify school access"
         )

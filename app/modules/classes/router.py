@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
 from app.db.supabase import supabase
 from app.schemas.classes import (
     ClassCreate,
@@ -11,9 +11,12 @@ from app.core.dependencies import (
     require_admin_by_uuid,
     require_teacher_by_uuid,
     require_admin_or_teacher_by_uuid,
+    get_current_school_id,
+    get_school_id_for_user,
 )
 from datetime import datetime
 import uuid
+from uuid import UUID
 
 router = APIRouter(tags=["Classes"])
 
@@ -54,15 +57,17 @@ def attach_students_to_class(class_obj: dict) -> dict:
 @router.post("/", response_model=ClassResponse)
 def create_class(
     class_data: ClassCreate,
-    admin_uid: str = Query(..., description="Admin UID"),
+    school_id: UUID = Depends(get_current_school_id),
 ):
-    require_admin_by_uuid(admin_uid)
-
+    """
+    Create a new class. Automatically scoped to current user's school.
+    """
     class_dict = {
         "id": str(uuid.uuid4()),
         "name": class_data.name,
         "description": class_data.description,
         "teacher_id": class_data.teacher_id,
+        "school_id": str(school_id),
         "created_at": datetime.utcnow().isoformat(),
         "updated_at": datetime.utcnow().isoformat(),
     }
@@ -72,53 +77,17 @@ def create_class(
 
 
 # -------------------------
-# GET CLASSES (UID BASED)
+# GET CLASSES (SCHOOL SCOPED)
 # -------------------------
 @router.get("/", response_model=list[dict])
 def get_classes(
-    uid: str = Query(..., description="User UID"),
+    school_id: UUID = Depends(get_current_school_id),
 ):
-    user = require_admin_or_teacher_by_uuid(uid)
-
-    # ADMIN: see all classes
-    if user["role"] == "admin":
-        result = supabase.table("classes").select("*").execute()
-        return [attach_students_to_class(cls) for cls in result.data]
-
-    # TEACHER: see own classes
-    if user["role"] == "teacher":
-        result = (
-            supabase
-            .table("classes")
-            .select("*")
-            .eq("teacher_id", uid)
-            .execute()
-        )
-        return [attach_students_to_class(cls) for cls in result.data]
-
-    # STUDENT: see enrolled classes
-    enrollments = (
-        supabase
-        .table("class_students")
-        .select("class_id")
-        .eq("student_id", uid)
-        .execute()
-    )
-
-    class_ids = [row["class_id"] for row in enrollments.data]
-
-    if not class_ids:
-        return []
-
-    classes = (
-        supabase
-        .table("classes")
-        .select("*")
-        .in_("id", class_ids)
-        .execute()
-    )
-
-    return [attach_students_to_class(cls) for cls in classes.data]
+    """
+    Get all classes for the current user's school.
+    """
+    result = supabase.table("classes").select("*").eq("school_id", str(school_id)).execute()
+    return [attach_students_to_class(cls) for cls in result.data]
 
 
 # -------------------------
@@ -127,7 +96,11 @@ def get_classes(
 @router.get("/student/{student_id}", response_model=list[dict])
 def get_student_classes(
     student_id: str,
+    school_id: UUID = Depends(get_current_school_id),
 ):
+    """
+    Get all classes a student is enrolled in within the current user's school.
+    """
     # Get all class enrollments for the student
     enrollments = (
         supabase
@@ -142,12 +115,13 @@ def get_student_classes(
     if not class_ids:
         return []
 
-    # Get all classes the student is enrolled in
+    # Get all classes the student is enrolled in, filtered by school
     classes = (
         supabase
         .table("classes")
         .select("*")
         .in_("id", class_ids)
+        .eq("school_id", str(school_id))
         .execute()
     )
 
@@ -160,45 +134,30 @@ def get_student_classes(
 @router.get("/{class_id}", response_model=dict)
 def get_class(
     class_id: str,
-    uid: str = Query(..., description="User UID"),
+    school_id: UUID = Depends(get_current_school_id),
 ):
-    user = require_admin_or_teacher_by_uuid(uid)
-
-    result = supabase.table("classes").select("*").eq("id", class_id).execute()
+    """
+    Get a single class by ID, scoped to current user's school.
+    """
+    result = supabase.table("classes").select("*").eq("id", class_id).eq("school_id", str(school_id)).execute()
     if not result.data:
         raise HTTPException(status_code=404, detail="Class not found")
 
-    class_obj = result.data[0]
-
-    if user["role"] == "teacher" and class_obj["teacher_id"] != uid:
-        raise HTTPException(status_code=403, detail="Access denied")
-
-    if user["role"] == "student":
-        enrollment = (
-            supabase
-            .table("class_students")
-            .select("*")
-            .eq("class_id", class_id)
-            .eq("student_id", uid)
-            .execute()
-        )
-        if not enrollment.data:
-            raise HTTPException(status_code=403, detail="Not enrolled in this class")
-
-    return attach_students_to_class(class_obj)
+    return attach_students_to_class(result.data[0])
 
 
 # -------------------------
-# UPDATE CLASS (ADMIN UID)
+# UPDATE CLASS
 # -------------------------
 @router.put("/{class_id}", response_model=ClassResponse)
 def update_class(
     class_id: str,
     class_data: ClassUpdate,
-    admin_uid: str = Query(..., description="Admin UID"),
+    school_id: UUID = Depends(get_current_school_id),
 ):
-    require_admin_by_uuid(admin_uid)
-
+    """
+    Update a class, scoped to current user's school.
+    """
     update_data = {"updated_at": datetime.utcnow().isoformat()}
 
     if class_data.name is not None:
@@ -213,6 +172,7 @@ def update_class(
         .table("classes")
         .update(update_data)
         .eq("id", class_id)
+        .eq("school_id", str(school_id))
         .execute()
     )
 
@@ -223,16 +183,17 @@ def update_class(
 
 
 # -------------------------
-# DELETE CLASS (ADMIN UID)
+# DELETE CLASS
 # -------------------------
 @router.delete("/{class_id}")
 def delete_class(
     class_id: str,
-    admin_uid: str = Query(..., description="Admin UID"),
+    school_id: UUID = Depends(get_current_school_id),
 ):
-    require_admin_by_uuid(admin_uid)
-
-    result = supabase.table("classes").delete().eq("id", class_id).execute()
+    """
+    Delete a class, scoped to current user's school.
+    """
+    result = supabase.table("classes").delete().eq("id", class_id).eq("school_id", str(school_id)).execute()
     if not result.data:
         raise HTTPException(status_code=404, detail="Class not found")
 
@@ -246,16 +207,14 @@ def delete_class(
 def add_student_to_class(
     class_id: str,
     student_data: ClassStudentAdd,
-    uid: str = Query(..., description="Admin or Teacher UID"),
+    school_id: UUID = Depends(get_current_school_id),
 ):
-    user = require_admin_or_teacher_by_uuid(uid)
-
-    class_result = supabase.table("classes").select("*").eq("id", class_id).execute()
+    """
+    Add a student to a class, scoped to current user's school.
+    """
+    class_result = supabase.table("classes").select("*").eq("id", class_id).eq("school_id", str(school_id)).execute()
     if not class_result.data:
         raise HTTPException(status_code=404, detail="Class not found")
-
-    if user["role"] == "teacher" and class_result.data[0]["teacher_id"] != uid:
-        raise HTTPException(status_code=403, detail="Access denied")
 
     existing = (
         supabase
@@ -285,16 +244,14 @@ def add_student_to_class(
 def remove_student_from_class(
     class_id: str,
     student_id: str,
-    uid: str = Query(..., description="Admin or Teacher UID"),
+    school_id: UUID = Depends(get_current_school_id),
 ):
-    user = require_admin_or_teacher_by_uuid(uid)
-
-    class_result = supabase.table("classes").select("*").eq("id", class_id).execute()
+    """
+    Remove a student from a class, scoped to current user's school.
+    """
+    class_result = supabase.table("classes").select("*").eq("id", class_id).eq("school_id", str(school_id)).execute()
     if not class_result.data:
         raise HTTPException(status_code=404, detail="Class not found")
-
-    if user["role"] == "teacher" and class_result.data[0]["teacher_id"] != uid:
-        raise HTTPException(status_code=403, detail="Access denied")
 
     result = (
         supabase

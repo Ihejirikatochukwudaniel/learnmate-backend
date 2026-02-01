@@ -1,6 +1,7 @@
 from pydantic import BaseModel
 from typing import Optional, List
 from datetime import datetime
+from uuid import UUID
 
 class ClassCreate(BaseModel):
     name: str
@@ -17,6 +18,7 @@ class ClassResponse(BaseModel):
     name: str
     description: Optional[str] = None
     teacher_id: str
+    school_id: UUID
     created_at: datetime
     updated_at: datetime
 
