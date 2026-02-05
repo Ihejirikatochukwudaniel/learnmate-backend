@@ -1,8 +1,11 @@
 import os
+import logging
 from fastapi import Depends, HTTPException, status, Query
 from app.db.supabase import supabase
 from app.core.config import settings
 from uuid import UUID
+
+logger = logging.getLogger(__name__)
 
 def get_current_user(user_id: str = Query(..., description="User UUID for authentication")):
     """
@@ -30,10 +33,18 @@ def get_current_user(user_id: str = Query(..., description="User UUID for authen
         # Fetch user profile from profiles table
         profile_response = supabase.table("profiles").select("id, full_name, email, role").eq("id", user_id).execute()
 
+        # Check for errors returned by Supabase client
+        if hasattr(profile_response, 'error') and profile_response.error:
+            logger.error("Supabase error fetching profile: %s", profile_response.error)
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Upstream error fetching profile"
+            )
+
         if not profile_response.data or len(profile_response.data) == 0:
             raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="User profile not found. Please complete your profile setup."
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User profile not found"
             )
 
         profile = profile_response.data[0]
@@ -55,9 +66,11 @@ def get_current_user(user_id: str = Query(..., description="User UUID for authen
     except HTTPException:
         # Re-raise HTTP exceptions as-is
         raise
+    except HTTPException:
+        raise
     except Exception as e:
-        # Catch any other exceptions (network issues, Supabase errors, etc.)
+        logger.exception("Unexpected error in get_current_user")
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authentication failed. Please check your UUID and try again."
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Internal error while fetching profile: {str(e)}"
         )
