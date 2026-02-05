@@ -84,8 +84,8 @@ def create_user(
         print("DEBUG: create_user function called")
         print(f"DEBUG: Raw user_data object: {user_data}")
         print(f"DEBUG: user_data.email: '{user_data.email}' (type: {type(user_data.email)})")
-        print(f"DEBUG: user_data.firstName: '{user_data.firstName}' (type: {type(user_data.firstName)})")
-        print(f"DEBUG: user_data.lastName: '{user_data.lastName}' (type: {type(user_data.lastName)})")
+        print(f"DEBUG: user_data.first_name: '{user_data.first_name}' (type: {type(user_data.first_name)})")
+        print(f"DEBUG: user_data.last_name: '{user_data.last_name}' (type: {type(user_data.last_name)})")
         print(f"DEBUG: user_data.role: '{user_data.role}' (type: {type(user_data.role)})")
         print(f"DEBUG: user_data.password: '{user_data.password}' (type: {type(user_data.password)})")
         print("=" * 50)
@@ -108,8 +108,8 @@ def create_user(
                 "password": password,
                 "email_confirm": False,  # Disable email confirmation
                 "user_metadata": {
-                    "firstName": user_data.firstName,
-                    "lastName": user_data.lastName,
+                    "firstName": user_data.first_name,
+                    "lastName": user_data.last_name,
                     "role": user_data.role
                 }
             })
@@ -135,9 +135,9 @@ def create_user(
             profile_data = {
                 "id": user_id,
                 "email": user_data.email,
-                "first_name": user_data.firstName,
-                "last_name": user_data.lastName,
-                "full_name": f"{user_data.firstName} {user_data.lastName}",
+                "first_name": user_data.first_name,
+                "last_name": user_data.last_name,
+                "full_name": f"{user_data.first_name} {user_data.last_name}",
                 "role": user_data.role,
                 "school_id": str(school_id)
             }
@@ -157,8 +157,8 @@ def create_user(
             "user_id": user_id,
             "email": user_data.email,
             "role": user_data.role,
-            "first_name": user_data.firstName,
-            "last_name": user_data.lastName
+            "first_name": user_data.first_name,
+            "last_name": user_data.last_name
         }
         if not user_data.password:
             response["generated_password"] = password
@@ -202,8 +202,8 @@ def bootstrap_admin(user_data: ProfileCreate):
                 "password": password,
                 "email_confirm": False,  # Disable email confirmation
                 "user_metadata": {
-                    "firstName": user_data.firstName,
-                    "lastName": user_data.lastName,
+                    "firstName": user_data.first_name,
+                    "lastName": user_data.last_name,
                     "role": user_data.role
                 }
             })
@@ -219,9 +219,9 @@ def bootstrap_admin(user_data: ProfileCreate):
             profile_data = {
                 "id": user_id,
                 "email": user_data.email,
-                "first_name": user_data.firstName,
-                "last_name": user_data.lastName,
-                "full_name": f"{user_data.firstName} {user_data.lastName}",
+                "first_name": user_data.first_name,
+                "last_name": user_data.last_name,
+                "full_name": f"{user_data.first_name} {user_data.last_name}",
                 "role": user_data.role
             }
             # Use upsert to handle case where profile might already exist from a trigger
