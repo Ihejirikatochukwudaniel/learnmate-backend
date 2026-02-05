@@ -90,9 +90,9 @@ def create_user(
         print(f"DEBUG: user_data.password: '{user_data.password}' (type: {type(user_data.password)})")
         print("=" * 50)
 
-        # Validate role
-        if user_data.role not in ["teacher", "student"]:
-            raise HTTPException(status_code=400, detail="Role must be 'teacher' or 'student'")
+        # Validate role (allow admin, teacher, student)
+        if user_data.role not in ["admin", "teacher", "student"]:
+            raise HTTPException(status_code=400, detail="Role must be one of: 'admin', 'teacher', 'student'")
 
         # Generate password if not provided
         password = user_data.password
