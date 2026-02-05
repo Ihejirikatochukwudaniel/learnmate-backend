@@ -7,7 +7,7 @@ class ProfileCreate(BaseModel):
     first_name: str = Field(..., alias="firstName")
     last_name: str = Field(..., alias="lastName")
     email: str
-    role: str  # 'admin', 'teacher', 'student'
+    role: str = "admin"  # default role is 'admin' ('admin', 'teacher', 'student')
     password: Optional[str] = None
 
     class Config:

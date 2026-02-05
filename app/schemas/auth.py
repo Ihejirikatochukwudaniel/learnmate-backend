@@ -12,3 +12,4 @@ class UserIdRequest(BaseModel):
 
 class LoginResponse(BaseModel):
     user_id: str
+    token: Optional[str] = None
