@@ -71,7 +71,7 @@ def signup(request: SignupRequest):
             "id": user_id,
             "email": request.email,
             "full_name": request.full_name,
-            "role": "admin"  # Default role for new signups
+            
         }
         
         # Add school_id only if it's provided and not empty
