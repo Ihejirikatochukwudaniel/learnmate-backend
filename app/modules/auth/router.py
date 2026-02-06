@@ -19,16 +19,24 @@ class SignupRequest(BaseModel):
     password: str
     full_name: str
     school_id: Optional[str] = None
+    role: Optional[str] = None  # Add this - allows specifying role
 
 router = APIRouter(tags=["Auth"])
 
 @router.post("/signup", response_model=LoginResponse)
 def signup(request: SignupRequest):
     """
-    Register a new user account with admin role.
+    Register a new user account.
     
     Creates both authentication user and profile entry.
-    New users are automatically assigned admin role for their school.
+    New users are automatically assigned admin role by default unless a different role is specified.
+    
+    Args:
+    - email: User's email address
+    - password: User's password
+    - full_name: User's full name
+    - school_id: Optional school ID to associate with user
+    - role: Optional role (defaults to 'admin' if not specified)
     
     Returns:
     - user_id: The new user's unique identifier
@@ -66,13 +74,16 @@ def signup(request: SignupRequest):
             token = create_session(user_id)
             return LoginResponse(user_id=user_id, token=token)
 
-        # Create profile with admin role (default for all new users)
+        # Create profile data
         profile_data = {
             "id": user_id,
             "email": request.email,
             "full_name": request.full_name,
-            
         }
+        
+        # Add role ONLY if explicitly specified (otherwise trigger sets to 'admin')
+        if request.role:
+            profile_data["role"] = request.role
         
         # Add school_id only if it's provided and not empty
         if request.school_id and request.school_id.strip():
@@ -142,12 +153,14 @@ def get_current_user_profile(user_id: Optional[str] = Query(None, description="U
     """
     Get current authenticated user's profile information.
 
-    Requires user_id as query parameter.
+    Requires user_id as query parameter or Authorization header.
     Returns user data including:
     - id: User's unique identifier
     - email: User's email address
     - role: User's role (admin, teacher, student)
     - full_name: User's full name
+    - school_id: Associated school ID (if any)
+    - school_name: Associated school name (if any)
     """
     # If Authorization Bearer token provided, resolve user_id from cache
     uid = user_id

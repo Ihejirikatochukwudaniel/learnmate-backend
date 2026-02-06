@@ -6,8 +6,8 @@ class UserResponse(BaseModel):
     email: Optional[str] = None
     role: str
     full_name: Optional[str] = None
-    school_id: Optional[str] = None  # Add this
-    school_name: Optional[str] = None  # Add this
+    school_id: Optional[str] = None
+    school_name: Optional[str] = None
 
 class UserIdRequest(BaseModel):
     user_id: str
