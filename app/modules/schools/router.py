@@ -29,15 +29,23 @@ def create_school(
         if admin_profile.data[0]["role"] != "admin":
             raise HTTPException(status_code=400, detail="Specified user is not an admin")
 
+        school_id = str(uuid4())
         school_data = {
-            "id": str(uuid4()),
+            "id": school_id,
             "school_name": school.school_name,
             "admin_id": str(school.admin_id),
             "created_at": datetime.utcnow().isoformat(),
             "updated_at": datetime.utcnow().isoformat()
         }
 
+        # Insert school
         result = supabase.table("schools").insert(school_data).execute()
+        
+        # Update the admin's profile with the school_id
+        supabase.table("profiles").update({
+            "school_id": school_id
+        }).eq("id", str(school.admin_id)).execute()
+
         return SchoolResponse(**result.data[0])
 
     except HTTPException:
