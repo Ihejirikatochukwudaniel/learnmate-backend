@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, List
 from datetime import datetime
 from uuid import UUID
@@ -6,7 +6,7 @@ from uuid import UUID
 class ClassCreate(BaseModel):
     name: str
     description: Optional[str] = None
-    teacher_id: str
+    school_id: Optional[UUID] = Field(None, alias="schoolId")
     school_name: Optional[str] = None
 
 class ClassUpdate(BaseModel):
