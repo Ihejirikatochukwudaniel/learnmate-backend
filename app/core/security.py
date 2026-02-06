@@ -15,7 +15,7 @@ def get_current_user(user_id: str = Query(..., description="User UUID for authen
         user_id: User UUID from query parameter
 
     Returns:
-        dict: User profile data with id, email, role, and full_name
+        dict: User profile data with id, email, role, full_name, school_id, and school_name
 
     Raises:
         HTTPException: 401 if user profile not found
@@ -30,8 +30,10 @@ def get_current_user(user_id: str = Query(..., description="User UUID for authen
                 detail="Invalid UUID format"
             )
 
-        # Fetch user profile from profiles table
-        profile_response = supabase.table("profiles").select("id, full_name, email, role").eq("id", user_id).execute()
+        # Fetch user profile from profiles table with school information
+        profile_response = supabase.table("profiles").select(
+            "id, full_name, email, role, school_id, schools(school_name)"
+        ).eq("id", user_id).execute()
 
         # Check for errors returned by Supabase client
         if hasattr(profile_response, 'error') and profile_response.error:
@@ -56,17 +58,22 @@ def get_current_user(user_id: str = Query(..., description="User UUID for authen
                 detail="User profile incomplete. Role information missing."
             )
 
+        # Extract school name from the joined data
+        school_name = None
+        if profile.get("schools") and isinstance(profile["schools"], dict):
+            school_name = profile["schools"].get("school_name")
+
         return {
             "id": profile["id"],
             "email": profile["email"],
             "role": profile["role"],
-            "full_name": profile.get("full_name")
+            "full_name": profile.get("full_name"),
+            "school_id": profile.get("school_id"),
+            "school_name": school_name
         }
 
     except HTTPException:
         # Re-raise HTTP exceptions as-is
-        raise
-    except HTTPException:
         raise
     except Exception as e:
         logger.exception("Unexpected error in get_current_user")
