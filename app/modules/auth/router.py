@@ -5,12 +5,104 @@ from app.core.security import get_current_user
 from app.core.session_cache import create_session, get_user_id_for_token
 from pydantic import BaseModel
 from typing import Optional
+import logging
+
+# Setup logging
+logger = logging.getLogger(__name__)
 
 class LoginRequest(BaseModel):
     email: str
     password: str
 
+class SignupRequest(BaseModel):
+    email: str
+    password: str
+    full_name: str
+    school_id: Optional[str] = None
+
 router = APIRouter(tags=["Auth"])
+
+@router.post("/signup", response_model=LoginResponse)
+def signup(request: SignupRequest):
+    """
+    Register a new user account with admin role.
+    
+    Creates both authentication user and profile entry.
+    New users are automatically assigned admin role for their school.
+    
+    Returns:
+    - user_id: The new user's unique identifier
+    - token: Session token for authentication
+    """
+    try:
+        # Check if user already exists in profiles by email
+        existing_user = supabase.table('profiles').select("*").eq('email', request.email).execute()
+        if existing_user.data:
+            raise HTTPException(
+                status_code=400,
+                detail="An account with this email already exists. Please login instead."
+            )
+
+        # Create auth user in Supabase
+        auth_response = supabase.auth.sign_up({
+            "email": request.email,
+            "password": request.password
+        })
+
+        if not auth_response.user:
+            raise HTTPException(
+                status_code=400,
+                detail="Signup failed. Please try again."
+            )
+
+        user_id = str(auth_response.user.id)
+
+        # Check if profile already exists for this user_id (from previous failed attempt)
+        existing_profile = supabase.table('profiles').select("*").eq('id', user_id).execute()
+        
+        if existing_profile.data:
+            # Profile already exists, just log them in
+            logger.info(f"Profile already exists for user {user_id}, logging in")
+            token = create_session(user_id)
+            return LoginResponse(user_id=user_id, token=token)
+
+        # Create profile with admin role (default for all new users)
+        profile_data = {
+            "id": user_id,
+            "email": request.email,
+            "full_name": request.full_name,
+            "role": "admin"  # Default role for new signups
+        }
+        
+        # Add school_id only if it's provided and not empty
+        if request.school_id and request.school_id.strip():
+            profile_data["school_id"] = request.school_id
+
+        try:
+            logger.info(f"Attempting to create profile with data: {profile_data}")
+            profile_response = supabase.table('profiles').insert(profile_data).execute()
+            logger.info(f"Profile created successfully")
+        except Exception as profile_error:
+            # Log the actual error for debugging
+            logger.error(f"Profile creation error: {str(profile_error)}")
+            raise HTTPException(
+                status_code=400,
+                detail=f"Profile creation failed: {str(profile_error)}"
+            )
+
+        # Create session token for immediate login
+        token = create_session(user_id)
+
+        return LoginResponse(user_id=user_id, token=token)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Signup error: {str(e)}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Signup failed: {str(e)}"
+        )
 
 @router.post("/login", response_model=LoginResponse)
 def login(request: LoginRequest):
