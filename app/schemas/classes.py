@@ -8,6 +8,8 @@ class ClassCreate(BaseModel):
     description: Optional[str] = None
     school_id: Optional[UUID] = Field(None, alias="schoolId")
     school_name: Optional[str] = None
+    teacher_id: Optional[str] = None
+
 
 class ClassUpdate(BaseModel):
     name: Optional[str] = None
