@@ -9,6 +9,8 @@ class ProfileCreate(BaseModel):
     email: str
     role: str = "admin"  # default role is 'admin' ('admin', 'teacher', 'student')
     password: Optional[str] = None
+    school_id: Optional[UUID] = Field(None, alias="schoolId")
+    school_name: Optional[str] = Field(None, alias="schoolName")
 
     class Config:
         populate_by_name = True  # Allow both snake_case and camelCase

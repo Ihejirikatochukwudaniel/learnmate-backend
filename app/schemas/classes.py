@@ -7,6 +7,7 @@ class ClassCreate(BaseModel):
     name: str
     description: Optional[str] = None
     teacher_id: str
+    school_name: Optional[str] = None
 
 class ClassUpdate(BaseModel):
     name: Optional[str] = None
