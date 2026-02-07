@@ -166,19 +166,16 @@ def require_admin_or_teacher_by_uuid(user_uuid: str = Query(..., description="UU
             detail="Failed to verify admin/teacher access"
         )
 
-def get_current_school_id(user_id: str = Query(..., description="User ID for authentication")) -> UUID:
+def get_current_school_id(user_uuid: str = Query(..., description="UUID of the admin or teacher user")) -> UUID:
     """
     Dependency to get the current user's school_id from their profile.
     Raises 403 if user has no school_id assigned.
     
-    This version expects user_id as a Query parameter.
+    This version expects user_uuid as a Query parameter.
     """
     try:
-        # Validate user exists
-        user = get_current_user(user_id)
-        
         # Fetch user's profile with school_id
-        profile_response = supabase.table("profiles").select("id, school_id").eq("id", user_id).execute()
+        profile_response = supabase.table("profiles").select("id, school_id").eq("id", user_uuid).execute()
 
         if not profile_response.data or len(profile_response.data) == 0:
             raise HTTPException(
