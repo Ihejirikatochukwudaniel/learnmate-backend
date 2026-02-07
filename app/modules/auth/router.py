@@ -5,6 +5,8 @@ from app.core.security import get_current_user
 from app.core.session_cache import create_session, get_user_id_for_token
 from pydantic import BaseModel
 from typing import Optional
+from uuid import uuid4
+from datetime import datetime
 import logging
 
 # Setup logging
@@ -19,7 +21,8 @@ class SignupRequest(BaseModel):
     password: str
     full_name: str
     school_id: Optional[str] = None
-    role: Optional[str] = None  # Add this - allows specifying role
+    school_name: Optional[str] = None  # Add this - for creating new school
+    role: Optional[str] = None  # Optional role - defaults to 'admin' if not specified
 
 router = APIRouter(tags=["Auth"])
 
@@ -29,13 +32,15 @@ def signup(request: SignupRequest):
     Register a new user account.
     
     Creates both authentication user and profile entry.
+    Optionally creates a new school if school_name is provided.
     New users are automatically assigned admin role by default unless a different role is specified.
     
     Args:
     - email: User's email address
     - password: User's password
     - full_name: User's full name
-    - school_id: Optional school ID to associate with user
+    - school_id: Optional existing school ID to associate with user
+    - school_name: Optional new school name to create (ignored if school_id is provided)
     - role: Optional role (defaults to 'admin' if not specified)
     
     Returns:
@@ -74,20 +79,52 @@ def signup(request: SignupRequest):
             token = create_session(user_id)
             return LoginResponse(user_id=user_id, token=token)
 
+        # Handle school creation if school_name is provided and school_id is not
+        final_school_id = request.school_id
+        
+        if not final_school_id and request.school_name and request.school_name.strip():
+            # Check if school name already exists
+            existing_school = supabase.table("schools").select("id").eq("school_name", request.school_name.strip()).execute()
+            
+            if existing_school.data:
+                raise HTTPException(
+                    status_code=400,
+                    detail="School name already exists. Please use a different name or provide the existing school_id."
+                )
+            
+            # Create new school
+            new_school_id = str(uuid4())
+            school_data = {
+                "id": new_school_id,
+                "school_name": request.school_name.strip(),
+                "admin_id": user_id,
+                "created_at": datetime.utcnow().isoformat(),
+                "updated_at": datetime.utcnow().isoformat()
+            }
+            
+            try:
+                logger.info(f"Creating new school: {request.school_name}")
+                supabase.table("schools").insert(school_data).execute()
+                final_school_id = new_school_id
+                logger.info(f"School created successfully with ID: {new_school_id}")
+            except Exception as school_error:
+                logger.error(f"School creation error: {str(school_error)}")
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"School creation failed: {str(school_error)}"
+                )
+
         # Create profile data
         profile_data = {
             "id": user_id,
             "email": request.email,
             "full_name": request.full_name,
+            "role": request.role if request.role else "admin",  # Default to 'admin' if no role specified
         }
         
-        # Add role ONLY if explicitly specified (otherwise trigger sets to 'admin')
-        if request.role:
-            profile_data["role"] = request.role
-        
         # Add school_id only if it's provided and not empty
-        if request.school_id and request.school_id.strip():
-            profile_data["school_id"] = request.school_id
+        if final_school_id and final_school_id.strip():
+            profile_data["school_id"] = final_school_id
 
         try:
             logger.info(f"Attempting to create profile with data: {profile_data}")

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from app.db.supabase import supabase
 from app.schemas.attendance import (
     AttendanceCreate,
@@ -6,7 +6,7 @@ from app.schemas.attendance import (
     AttendanceResponse,
     AttendanceBulkCreate,
 )
-from app.core.dependencies import get_current_school_id, require_admin_or_teacher_by_uuid
+from app.core.dependencies import get_current_school_id
 from datetime import datetime, date as date_type
 from typing import List
 from uuid import UUID
@@ -17,13 +17,20 @@ router = APIRouter(tags=["Attendance"])
 @router.post("/", response_model=AttendanceResponse)
 def mark_attendance(
     attendance: AttendanceCreate,
+    user_uuid: str = Query(..., description="UUID of the admin or teacher user"),
     school_id: UUID = Depends(get_current_school_id),
-    current_user: dict = Depends(require_admin_or_teacher_by_uuid),
 ):
     """
     Mark attendance for a student. Admin or teacher of the class, scoped to school.
     """
     try:
+        # Get current user from user_uuid
+        user_result = supabase.table("profiles").select("id, role").eq("id", user_uuid).execute()
+        if not user_result.data:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        current_user = user_result.data[0]
+        
         class_id = str(attendance.class_id)
         student_id = str(attendance.student_id)
 
@@ -59,7 +66,7 @@ def mark_attendance(
             "class_id": class_id,
             "student_id": student_id,
             "date": str(attendance.date),
-            "status": attendance.status,  # Keep as boolean
+            "status": attendance.status,
             "marked_by": current_user["id"],
             "school_id": str(school_id),
             "created_at": datetime.utcnow().isoformat(),
@@ -78,13 +85,20 @@ def mark_attendance(
 @router.post("/bulk", response_model=List[AttendanceResponse])
 def mark_bulk_attendance(
     bulk_data: AttendanceBulkCreate,
+    user_uuid: str = Query(..., description="UUID of the admin or teacher user"),
     school_id: UUID = Depends(get_current_school_id),
-    user: dict = Depends(require_admin_or_teacher_by_uuid),
 ):
     """
     Mark attendance for multiple students at once, scoped to school.
     """
     try:
+        # Get current user from user_uuid
+        user_result = supabase.table("profiles").select("id, role").eq("id", user_uuid).execute()
+        if not user_result.data:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        user = user_result.data[0]
+        
         responses = []
         errors = []
 
@@ -126,7 +140,7 @@ def mark_bulk_attendance(
                     "class_id": class_id,
                     "student_id": student_id,
                     "date": str(attendance.date),
-                    "status": attendance.status,  # Keep as boolean
+                    "status": attendance.status,
                     "marked_by": user["id"],
                     "school_id": str(school_id),
                     "created_at": datetime.utcnow().isoformat(),
@@ -158,15 +172,22 @@ def mark_bulk_attendance(
 @router.get("/class/{class_id}", response_model=List[dict])
 def get_class_attendance(
     class_id: UUID,
+    user_uuid: str = Query(..., description="UUID of the admin or teacher user"),
     date: date_type | None = None,
     school_id: UUID = Depends(get_current_school_id),
-    user: dict = Depends(require_admin_or_teacher_by_uuid),
 ):
     """
     Get attendance for a class grouped by date, scoped to school.
     Returns attendance records grouped by date with all students for each date.
     """
     try:
+        # Get current user from user_uuid
+        user_result = supabase.table("profiles").select("id, role").eq("id", user_uuid).execute()
+        if not user_result.data:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        user = user_result.data[0]
+        
         class_id_str = str(class_id)
 
         class_result = (
@@ -199,11 +220,10 @@ def get_class_attendance(
                     "students": []
                 }
             
-            # Status is already a boolean in the database
             grouped_by_date[record_date]["students"].append({
                 "id": record["id"],
                 "student_id": record["student_id"],
-                "status": record["status"],  # Already boolean
+                "status": record["status"],
                 "marked_by": record["marked_by"],
                 "created_at": record["created_at"]
             })
@@ -253,13 +273,20 @@ def get_student_attendance(
 def update_attendance(
     attendance_id: UUID,
     attendance: AttendanceUpdate,
+    user_uuid: str = Query(..., description="UUID of the admin or teacher user"),
     school_id: UUID = Depends(get_current_school_id),
-    user: dict = Depends(require_admin_or_teacher_by_uuid),
 ):
     """
     Update attendance record, scoped to school.
     """
     try:
+        # Get current user from user_uuid
+        user_result = supabase.table("profiles").select("id, role").eq("id", user_uuid).execute()
+        if not user_result.data:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        user = user_result.data[0]
+        
         attendance_id_str = str(attendance_id)
 
         existing = (
@@ -288,7 +315,7 @@ def update_attendance(
 
         result = (
             supabase.table("attendance")
-            .update({"status": attendance.status})  # Keep as boolean
+            .update({"status": attendance.status})
             .eq("id", attendance_id_str)
             .eq("school_id", str(school_id))
             .execute()
@@ -306,13 +333,20 @@ def update_attendance(
 @router.delete("/{attendance_id}")
 def delete_attendance(
     attendance_id: UUID,
+    user_uuid: str = Query(..., description="UUID of the admin or teacher user"),
     school_id: UUID = Depends(get_current_school_id),
-    user: dict = Depends(require_admin_or_teacher_by_uuid),
 ):
     """
     Delete attendance record, scoped to school.
     """
     try:
+        # Get current user from user_uuid
+        user_result = supabase.table("profiles").select("id, role").eq("id", user_uuid).execute()
+        if not user_result.data:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        user = user_result.data[0]
+        
         attendance_id_str = str(attendance_id)
 
         existing = (
@@ -352,14 +386,21 @@ def delete_attendance(
 @router.get("/class/{class_id}/summary")
 def get_attendance_summary(
     class_id: UUID,
+    user_uuid: str = Query(..., description="UUID of the admin or teacher user"),
     date: date_type | None = None,
     school_id: UUID = Depends(get_current_school_id),
-    user: dict = Depends(require_admin_or_teacher_by_uuid),
 ):
     """
     Get attendance summary for a class, scoped to school.
     """
     try:
+        # Get current user from user_uuid
+        user_result = supabase.table("profiles").select("id, role").eq("id", user_uuid).execute()
+        if not user_result.data:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        user = user_result.data[0]
+        
         class_id_str = str(class_id)
 
         class_result = (
