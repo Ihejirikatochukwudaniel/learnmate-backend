@@ -21,8 +21,8 @@ class SignupRequest(BaseModel):
     password: str
     full_name: str
     school_id: Optional[str] = None
-    school_name: Optional[str] = None  # Add this - for creating new school
-    role: Optional[str] = None  # Optional role - defaults to 'admin' if not specified
+    school_name: Optional[str] = None
+    role: Optional[str] = None
 
 router = APIRouter(tags=["Auth"])
 
@@ -48,6 +48,9 @@ def signup(request: SignupRequest):
     - token: Session token for authentication
     """
     try:
+        logger.info(f"=== SIGNUP REQUEST START ===")
+        logger.info(f"Request data: email={request.email}, full_name={request.full_name}, role={request.role}, school_name={request.school_name}")
+        
         # Check if user already exists in profiles by email
         existing_user = supabase.table('profiles').select("*").eq('email', request.email).execute()
         if existing_user.data:
@@ -57,6 +60,7 @@ def signup(request: SignupRequest):
             )
 
         # Create auth user in Supabase
+        logger.info("Creating auth user...")
         auth_response = supabase.auth.sign_up({
             "email": request.email,
             "password": request.password
@@ -69,6 +73,7 @@ def signup(request: SignupRequest):
             )
 
         user_id = str(auth_response.user.id)
+        logger.info(f"Auth user created with ID: {user_id}")
 
         # Check if profile already exists for this user_id (from previous failed attempt)
         existing_profile = supabase.table('profiles').select("*").eq('id', user_id).execute()
@@ -83,10 +88,12 @@ def signup(request: SignupRequest):
         final_school_id = request.school_id
         
         if not final_school_id and request.school_name and request.school_name.strip():
+            logger.info(f"School name provided: {request.school_name}")
             # Check if school name already exists
             existing_school = supabase.table("schools").select("id").eq("school_name", request.school_name.strip()).execute()
             
             if existing_school.data:
+                logger.warning(f"School already exists: {request.school_name}")
                 raise HTTPException(
                     status_code=400,
                     detail="School name already exists. Please use a different name or provide the existing school_id."
@@ -103,36 +110,41 @@ def signup(request: SignupRequest):
             }
             
             try:
-                logger.info(f"Creating new school: {request.school_name}")
-                supabase.table("schools").insert(school_data).execute()
+                logger.info(f"Creating new school with data: {school_data}")
+                school_result = supabase.table("schools").insert(school_data).execute()
                 final_school_id = new_school_id
-                logger.info(f"School created successfully with ID: {new_school_id}")
+                logger.info(f"School created successfully: {school_result.data}")
             except Exception as school_error:
                 logger.error(f"School creation error: {str(school_error)}")
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"School creation failed: {str(school_error)}"
-                )
+                # Don't fail the entire signup if school creation fails
+                # Just log and continue without school
+                logger.warning("Continuing signup without school")
+                final_school_id = None
 
-        # Create profile data
+        # Build profile data with ALL fields including role and full_name
+        role_to_set = request.role if request.role and request.role.strip() else "admin"
+        
         profile_data = {
             "id": user_id,
             "email": request.email,
             "full_name": request.full_name,
-            "role": request.role if request.role else "admin",  # Default to 'admin' if no role specified
+            "role": role_to_set  # Include role in initial insert
         }
         
-        # Add school_id only if it's provided and not empty
-        if final_school_id and final_school_id.strip():
-            profile_data["school_id"] = final_school_id
+        # Add school_id if available
+        if final_school_id:
+            profile_data["school_id"] = str(final_school_id)
+            logger.info(f"Adding school_id to profile: {final_school_id}")
 
         try:
-            logger.info(f"Attempting to create profile with data: {profile_data}")
+            logger.info(f"Creating profile with data: {profile_data}")
             profile_response = supabase.table('profiles').insert(profile_data).execute()
-            logger.info(f"Profile created successfully")
+            logger.info(f"Profile created: {profile_response.data}")
+            
         except Exception as profile_error:
             # Log the actual error for debugging
             logger.error(f"Profile creation error: {str(profile_error)}")
+            logger.error(f"Profile data that failed: {profile_data}")
             raise HTTPException(
                 status_code=400,
                 detail=f"Profile creation failed: {str(profile_error)}"
@@ -140,13 +152,16 @@ def signup(request: SignupRequest):
 
         # Create session token for immediate login
         token = create_session(user_id)
-
+        
+        logger.info(f"=== SIGNUP REQUEST COMPLETE ===")
         return LoginResponse(user_id=user_id, token=token)
 
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Signup error: {str(e)}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
         raise HTTPException(
             status_code=400,
             detail=f"Signup failed: {str(e)}"
