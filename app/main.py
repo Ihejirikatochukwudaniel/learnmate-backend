@@ -10,6 +10,7 @@ from app.modules.submissions.router import router as submissions_router
 from app.modules.grades.router import router as grades_router
 from app.modules.admin.router import router as admin_router
 from app.modules.schools.router import router as schools_router
+from app.modules.superuser.router import router as superuser_router
 
 app = FastAPI(
     title="LearnMate Backend MVP",
@@ -77,3 +78,4 @@ app.include_router(submissions_router, prefix="/submissions", tags=["Submissions
 app.include_router(grades_router, prefix="/grades", tags=["Grades"])
 app.include_router(admin_router, prefix="/admin", tags=["Admin"])
 app.include_router(schools_router, prefix="/schools", tags=["Schools"])
+app.include_router(superuser_router, prefix="", tags=["Superuser"])
