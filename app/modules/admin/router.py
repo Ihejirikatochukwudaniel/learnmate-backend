@@ -76,7 +76,7 @@ def create_user(
     """
     Create a new user (teacher or student) in the current user's school. Admin only.
     Creates user in Supabase auth.users and profiles table.
-    Uses UUID-based admin verification.
+    Uses user ID-based admin verification.
     """
     try:
         # Debug logging

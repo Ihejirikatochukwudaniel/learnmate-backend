@@ -17,7 +17,7 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# Custom OpenAPI schema - simplified since we use UUID-based auth
+# Custom OpenAPI schema - simplified since we use user ID-based auth
 def custom_openapi():
     if app.openapi_schema:
         return app.openapi_schema

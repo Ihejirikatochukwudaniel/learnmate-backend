@@ -24,7 +24,7 @@ class ProfileUpdate(BaseModel):
         populate_by_name = True
 
 class ProfileResponse(BaseModel):
-    id: str
+    user_id: str = Field(..., alias="id")
     email: str
     first_name: str = Field(..., alias="firstName")
     last_name: str = Field(..., alias="lastName")

@@ -2,7 +2,7 @@ from pydantic import BaseModel
 from typing import Optional
 
 class UserResponse(BaseModel):
-    id: str
+    user_id: str
     email: Optional[str] = None
     role: str
     full_name: Optional[str] = None

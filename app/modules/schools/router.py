@@ -22,8 +22,8 @@ def create_school(
         if existing.data:
             raise HTTPException(status_code=400, detail="School name already exists")
 
-        # Verify admin_id exists and is an admin
-        admin_profile = supabase.table("profiles").select("id, role").eq("id", str(school.admin_id)).execute()
+        # Verify admin_user_id exists and is an admin
+        admin_profile = supabase.table("profiles").select("id, role").eq("id", str(school.admin_user_id)).execute()
         if not admin_profile.data:
             raise HTTPException(status_code=400, detail="Admin user not found")
         if admin_profile.data[0]["role"] != "admin":
@@ -33,7 +33,7 @@ def create_school(
         school_data = {
             "id": school_id,
             "school_name": school.school_name,
-            "admin_id": str(school.admin_id),
+            "admin_id": str(school.admin_user_id),
             "created_at": datetime.utcnow().isoformat(),
             "updated_at": datetime.utcnow().isoformat()
         }
@@ -44,7 +44,7 @@ def create_school(
         # Update the admin's profile with the school_id
         supabase.table("profiles").update({
             "school_id": school_id
-        }).eq("id", str(school.admin_id)).execute()
+        }).eq("id", str(school.admin_user_id)).execute()
 
         return SchoolResponse(**result.data[0])
 

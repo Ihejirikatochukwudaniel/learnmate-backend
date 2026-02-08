@@ -187,7 +187,7 @@ def login(request: LoginRequest):
             )
 
         # Create a short-lived server-side session token so the client can
-        # authenticate subsequent requests without passing raw UUID every time.
+        # authenticate subsequent requests without passing raw user ID every time.
         user_id = str(auth_response.user.id)
         token = create_session(user_id)
 

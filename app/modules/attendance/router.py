@@ -17,15 +17,15 @@ router = APIRouter(tags=["Attendance"])
 @router.post("/", response_model=AttendanceResponse)
 def mark_attendance(
     attendance: AttendanceCreate,
-    user_uuid: str = Query(..., description="UUID of the admin or teacher user"),
+    user_id: str = Query(..., description="User ID of the admin or teacher user"),
     school_id: UUID = Depends(get_current_school_id),
 ):
     """
     Mark attendance for a student. Admin or teacher of the class, scoped to school.
     """
     try:
-        # Get current user from user_uuid
-        user_result = supabase.table("profiles").select("id, role").eq("id", user_uuid).execute()
+        # Get current user from user_id
+        user_result = supabase.table("profiles").select("id, role").eq("id", user_id).execute()
         if not user_result.data:
             raise HTTPException(status_code=404, detail="User not found")
         
@@ -85,15 +85,15 @@ def mark_attendance(
 @router.post("/bulk", response_model=List[AttendanceResponse])
 def mark_bulk_attendance(
     bulk_data: AttendanceBulkCreate,
-    user_uuid: str = Query(..., description="UUID of the admin or teacher user"),
+    user_id: str = Query(..., description="User ID of the admin or teacher user"),
     school_id: UUID = Depends(get_current_school_id),
 ):
     """
     Mark attendance for multiple students at once, scoped to school.
     """
     try:
-        # Get current user from user_uuid
-        user_result = supabase.table("profiles").select("id, role").eq("id", user_uuid).execute()
+        # Get current user from user_id
+        user_result = supabase.table("profiles").select("id, role").eq("id", user_id).execute()
         if not user_result.data:
             raise HTTPException(status_code=404, detail="User not found")
         
@@ -172,7 +172,7 @@ def mark_bulk_attendance(
 @router.get("/class/{class_id}", response_model=List[dict])
 def get_class_attendance(
     class_id: UUID,
-    user_uuid: str = Query(..., description="UUID of the admin or teacher user"),
+    user_id: str = Query(..., description="User ID of the admin or teacher user"),
     date: date_type | None = None,
     school_id: UUID = Depends(get_current_school_id),
 ):
@@ -181,8 +181,8 @@ def get_class_attendance(
     Returns attendance records grouped by date with all students for each date.
     """
     try:
-        # Get current user from user_uuid
-        user_result = supabase.table("profiles").select("id, role").eq("id", user_uuid).execute()
+        # Get current user from user_id
+        user_result = supabase.table("profiles").select("id, role").eq("id", user_id).execute()
         if not user_result.data:
             raise HTTPException(status_code=404, detail="User not found")
         
@@ -273,15 +273,15 @@ def get_student_attendance(
 def update_attendance(
     attendance_id: UUID,
     attendance: AttendanceUpdate,
-    user_uuid: str = Query(..., description="UUID of the admin or teacher user"),
+    user_id: str = Query(..., description="User ID of the admin or teacher user"),
     school_id: UUID = Depends(get_current_school_id),
 ):
     """
     Update attendance record, scoped to school.
     """
     try:
-        # Get current user from user_uuid
-        user_result = supabase.table("profiles").select("id, role").eq("id", user_uuid).execute()
+        # Get current user from user_id
+        user_result = supabase.table("profiles").select("id, role").eq("id", user_id).execute()
         if not user_result.data:
             raise HTTPException(status_code=404, detail="User not found")
         
@@ -333,15 +333,15 @@ def update_attendance(
 @router.delete("/{attendance_id}")
 def delete_attendance(
     attendance_id: UUID,
-    user_uuid: str = Query(..., description="UUID of the admin or teacher user"),
+    user_id: str = Query(..., description="User ID of the admin or teacher user"),
     school_id: UUID = Depends(get_current_school_id),
 ):
     """
     Delete attendance record, scoped to school.
     """
     try:
-        # Get current user from user_uuid
-        user_result = supabase.table("profiles").select("id, role").eq("id", user_uuid).execute()
+        # Get current user from user_id
+        user_result = supabase.table("profiles").select("id, role").eq("id", user_id).execute()
         if not user_result.data:
             raise HTTPException(status_code=404, detail="User not found")
         
@@ -386,7 +386,7 @@ def delete_attendance(
 @router.get("/class/{class_id}/summary")
 def get_attendance_summary(
     class_id: UUID,
-    user_uuid: str = Query(..., description="UUID of the admin or teacher user"),
+    user_id: str = Query(..., description="User ID of the admin or teacher user"),
     date: date_type | None = None,
     school_id: UUID = Depends(get_current_school_id),
 ):
@@ -394,8 +394,8 @@ def get_attendance_summary(
     Get attendance summary for a class, scoped to school.
     """
     try:
-        # Get current user from user_uuid
-        user_result = supabase.table("profiles").select("id, role").eq("id", user_uuid).execute()
+        # Get current user from user_id
+        user_result = supabase.table("profiles").select("id, role").eq("id", user_id).execute()
         if not user_result.data:
             raise HTTPException(status_code=404, detail="User not found")
         
