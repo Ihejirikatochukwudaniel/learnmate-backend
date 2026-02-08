@@ -207,7 +207,7 @@ def get_current_user_profile(user_id: Optional[str] = Query(None, description="U
 
     Requires user_id as query parameter or Authorization header.
     Returns user data including:
-    - id: User's unique identifier
+    - user_id: User's unique identifier
     - email: User's email address
     - role: User's role (admin, teacher, student)
     - full_name: User's full name
@@ -226,4 +226,10 @@ def get_current_user_profile(user_id: Optional[str] = Query(None, description="U
         raise HTTPException(status_code=401, detail="User ID not provided")
 
     user = get_current_user(uid)
-    return UserResponse(**user)
+    
+    # Map 'id' to 'user_id' to match UserResponse schema
+    user_data = dict(user)
+    if 'id' in user_data:
+        user_data['user_id'] = user_data.pop('id')
+    
+    return UserResponse(**user_data)
