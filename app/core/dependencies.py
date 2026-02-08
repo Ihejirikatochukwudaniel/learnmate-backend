@@ -58,14 +58,14 @@ def require_admin_or_teacher(user_id: str = Query(..., description="User ID for 
         )
     return user
 
-def require_admin_by_uuid(admin_uuid: str = Query(..., description="UUID of the admin user")):
+def require_admin_by_uuid(user_id: str = Query(..., description="User ID of the admin user")):
     """
-    Dependency to verify admin role by UUID.
-    Checks if the provided UUID corresponds to a user with admin role in the profiles table.
+    Dependency to verify admin role by user ID.
+    Checks if the provided user ID corresponds to a user with admin role in the profiles table.
     """
     try:
-        # Fetch user profile from profiles table using the provided UUID
-        profile_response = supabase.table("profiles").select("id, role").eq("id", admin_uuid).execute()
+        # Fetch user profile from profiles table using the provided user ID
+        profile_response = supabase.table("profiles").select("id, role").eq("id", user_id).execute()
 
         if not profile_response.data or len(profile_response.data) == 0:
             raise HTTPException(
@@ -94,14 +94,14 @@ def require_admin_by_uuid(admin_uuid: str = Query(..., description="UUID of the 
             detail="Failed to verify admin access"
         )
 
-def require_teacher_by_uuid(teacher_uuid: str = Query(..., description="UUID of the teacher user")):
+def require_teacher_by_uuid(user_id: str = Query(..., description="User ID of the teacher user")):
     """
-    Dependency to verify teacher role by UUID.
-    Checks if the provided UUID corresponds to a user with teacher role in the profiles table.
+    Dependency to verify teacher role by user ID.
+    Checks if the provided user ID corresponds to a user with teacher role in the profiles table.
     """
     try:
-        # Fetch user profile from profiles table using the provided UUID
-        profile_response = supabase.table("profiles").select("id, role").eq("id", teacher_uuid).execute()
+        # Fetch user profile from profiles table using the provided user ID
+        profile_response = supabase.table("profiles").select("id, role").eq("id", user_id).execute()
 
         if not profile_response.data or len(profile_response.data) == 0:
             raise HTTPException(
@@ -130,14 +130,14 @@ def require_teacher_by_uuid(teacher_uuid: str = Query(..., description="UUID of 
             detail="Failed to verify teacher access"
         )
 
-def require_admin_or_teacher_by_uuid(user_uuid: str = Query(..., description="UUID of the admin or teacher user")):
+def require_admin_or_teacher_by_uuid(user_id: str = Query(..., description="User ID of the admin or teacher user")):
     """
-    Dependency to verify admin or teacher role by UUID.
-    Checks if the provided UUID corresponds to a user with admin or teacher role in the profiles table.
+    Dependency to verify admin or teacher role by user ID.
+    Checks if the provided user ID corresponds to a user with admin or teacher role in the profiles table.
     """
     try:
-        # Fetch user profile from profiles table using the provided UUID
-        profile_response = supabase.table("profiles").select("id, role").eq("id", user_uuid).execute()
+        # Fetch user profile from profiles table using the provided user ID
+        profile_response = supabase.table("profiles").select("id, role").eq("id", user_id).execute()
 
         if not profile_response.data or len(profile_response.data) == 0:
             raise HTTPException(
@@ -166,16 +166,16 @@ def require_admin_or_teacher_by_uuid(user_uuid: str = Query(..., description="UU
             detail="Failed to verify admin/teacher access"
         )
 
-def get_current_school_id(user_uuid: str = Query(..., description="UUID of the admin or teacher user")) -> UUID:
+def get_current_school_id(user_id: str = Query(..., description="User ID of the admin or teacher user")) -> UUID:
     """
     Dependency to get the current user's school_id from their profile.
     Raises 403 if user has no school_id assigned.
     
-    This version expects user_uuid as a Query parameter.
+    This version expects user_id as a Query parameter.
     """
     try:
         # Fetch user's profile with school_id
-        profile_response = supabase.table("profiles").select("id, school_id").eq("id", user_uuid).execute()
+        profile_response = supabase.table("profiles").select("id, school_id").eq("id", user_id).execute()
 
         if not profile_response.data or len(profile_response.data) == 0:
             raise HTTPException(

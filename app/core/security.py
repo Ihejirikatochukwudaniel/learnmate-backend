@@ -7,12 +7,12 @@ from uuid import UUID
 
 logger = logging.getLogger(__name__)
 
-def get_current_user(user_id: str = Query(..., description="User UUID for authentication")):
+def get_current_user(user_id: str = Query(..., description="User ID for authentication")):
     """
-    Fetches user profile information by UUID.
+    Fetches user profile information by user ID.
 
     Args:
-        user_id: User UUID from query parameter
+        user_id: User ID from query parameter
 
     Returns:
         dict: User profile data with id, email, role, full_name, school_id, and school_name
@@ -27,7 +27,7 @@ def get_current_user(user_id: str = Query(..., description="User UUID for authen
         except ValueError:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid UUID format"
+                detail="Invalid user ID format"
             )
 
         # Fetch user profile from profiles table with school information
