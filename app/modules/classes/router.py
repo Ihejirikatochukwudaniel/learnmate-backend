@@ -93,20 +93,20 @@ def get_classes(
 # -------------------------
 # GET STUDENT'S ENROLLED CLASSES
 # -------------------------
-@router.get("/student/{student_id}", response_model=list[dict])
+@router.get("/student", response_model=list[dict])
 def get_student_classes(
-    student_id: str,
+    user_id: str = Query(..., description="User ID for authentication"),
     school_id: UUID = Depends(get_current_school_id),
 ):
     """
-    Get all classes a student is enrolled in within the current user's school.
+    Get all classes the authenticated student is enrolled in within the current user's school.
     """
-    # Get all class enrollments for the student
+    # Get all class enrollments for the student (user_id is the student_id)
     enrollments = (
         supabase
         .table("class_students")
         .select("class_id")
-        .eq("student_id", student_id)
+        .eq("student_id", user_id)
         .execute()
     )
 

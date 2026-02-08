@@ -6,8 +6,6 @@ from uuid import UUID
 class ClassCreate(BaseModel):
     name: str
     description: Optional[str] = None
-    school_id: Optional[UUID] = Field(None, alias="schoolId")
-    school_name: Optional[str] = None
     teacher_id: Optional[str] = None
 
 
@@ -20,8 +18,8 @@ class ClassResponse(BaseModel):
     id: str
     name: str
     description: Optional[str] = None
-    teacher_id: str
-    school_id: UUID
+    teacher_id: Optional[str] = None  # Changed to Optional
+    school_id: str  # Changed from UUID to str to match your database
     created_at: datetime
     updated_at: datetime
 
