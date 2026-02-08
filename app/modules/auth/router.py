@@ -128,7 +128,8 @@ def signup(request: SignupRequest):
             "id": user_id,
             "email": request.email,
             "full_name": request.full_name,
-            "role": role_to_set  # Include role in initial insert
+            "role": role_to_set,  # Include role in initial insert
+            "last_login": datetime.utcnow().isoformat()  # Set initial last_login
         }
         
         # Add school_id if available
@@ -172,6 +173,7 @@ def login(request: LoginRequest):
     """
     Login with email and password to get user ID.
     Uses Supabase authentication.
+    Updates last_login timestamp for analytics tracking.
     """
     try:
         # Authenticate with Supabase
@@ -186,14 +188,28 @@ def login(request: LoginRequest):
                 detail="Invalid email or password"
             )
 
+        user_id = str(auth_response.user.id)
+        
+        # Update last_login timestamp
+        try:
+            supabase.table("profiles").update({
+                "last_login": datetime.utcnow().isoformat()
+            }).eq("id", user_id).execute()
+            logger.info(f"Updated last_login for user {user_id}")
+        except Exception as login_update_error:
+            # Log the error but don't fail the login
+            logger.warning(f"Failed to update last_login for user {user_id}: {str(login_update_error)}")
+        
         # Create a short-lived server-side session token so the client can
         # authenticate subsequent requests without passing raw user ID every time.
-        user_id = str(auth_response.user.id)
         token = create_session(user_id)
 
         return LoginResponse(user_id=user_id, token=token)
 
+    except HTTPException:
+        raise
     except Exception as e:
+        logger.error(f"Login error: {str(e)}")
         raise HTTPException(
             status_code=401,
             detail="Login failed. Please check your credentials."
@@ -209,7 +225,7 @@ def get_current_user_profile(user_id: Optional[str] = Query(None, description="U
     Returns user data including:
     - user_id: User's unique identifier
     - email: User's email address
-    - role: User's role (admin, teacher, student)
+    - role: User's role (admin, teacher, student, superuser)
     - full_name: User's full name
     - school_id: Associated school ID (if any)
     - school_name: Associated school name (if any)
