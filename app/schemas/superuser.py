@@ -27,7 +27,7 @@ class SchoolAnalytics(BaseModel):
     total_classes: int
     active_classes: int
     total_attendance_records: int
-    attendance_rate: float
+    attendance_rate: Optional[float] = None  # Changed to Optional
     recent_attendance_activity: int
     generated_at: datetime
 
@@ -41,7 +41,7 @@ class PlatformAnalytics(BaseModel):
     total_classes: int
     active_classes: int
     total_attendance_records: int
-    overall_attendance_rate: float
+    overall_attendance_rate: Optional[float] = None  # Changed to Optional
     recent_attendance_activity: int
     top_schools_by_users: List[Dict]
     top_schools_by_attendance: List[Dict]
