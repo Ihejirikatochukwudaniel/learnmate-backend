@@ -20,7 +20,6 @@ class SignupRequest(BaseModel):
     email: str
     password: str
     full_name: str
-    school_id: Optional[str] = None
     school_name: Optional[str] = None
     role: Optional[str] = None
 
@@ -39,8 +38,7 @@ def signup(request: SignupRequest):
     - email: User's email address
     - password: User's password
     - full_name: User's full name
-    - school_id: Optional existing school ID to associate with user
-    - school_name: Optional new school name to create (ignored if school_id is provided)
+    - school_name: Optional new school name to create
     - role: Optional role (defaults to 'admin' if not specified)
     
     Returns:
@@ -84,10 +82,10 @@ def signup(request: SignupRequest):
             token = create_session(user_id)
             return LoginResponse(user_id=user_id, token=token)
 
-        # Handle school creation if school_name is provided and school_id is not
-        final_school_id = request.school_id
+        # Handle school creation if school_name is provided
+        final_school_id = None
         
-        if not final_school_id and request.school_name and request.school_name.strip():
+        if request.school_name and request.school_name.strip():
             logger.info(f"School name provided: {request.school_name}")
             # Check if school name already exists
             existing_school = supabase.table("schools").select("id").eq("school_name", request.school_name.strip()).execute()
@@ -96,7 +94,7 @@ def signup(request: SignupRequest):
                 logger.warning(f"School already exists: {request.school_name}")
                 raise HTTPException(
                     status_code=400,
-                    detail="School name already exists. Please use a different name or provide the existing school_id."
+                    detail="School name already exists. Please use a different name."
                 )
             
             # Create new school
@@ -134,7 +132,7 @@ def signup(request: SignupRequest):
         
         # Add school_id if available
         if final_school_id:
-            profile_data["school_id"] = str(final_school_id)
+            profile_data["school_id"] = final_school_id
             logger.info(f"Adding school_id to profile: {final_school_id}")
 
         try:
