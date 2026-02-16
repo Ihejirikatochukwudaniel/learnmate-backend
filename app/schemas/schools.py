@@ -22,3 +22,7 @@ class SchoolResponse(BaseModel):
     
     class Config:
         populate_by_name = True  # Allow both admin_id and admin_user_id
+
+class SchoolDelete(BaseModel):
+    admin_id: UUID
+    school_id: UUID

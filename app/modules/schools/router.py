@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from app.db.supabase import supabase
-from app.schemas.schools import SchoolCreate, SchoolResponse
+from app.schemas.schools import SchoolCreate, SchoolResponse, SchoolDelete
 from app.core.dependencies import require_admin
 from app.core.security import get_current_user
 from uuid import uuid4
@@ -64,4 +64,47 @@ def get_all_schools(user: dict = Depends(require_admin)):
         return [SchoolResponse(**school) for school in result.data]
     except Exception as e:
         print(f"Get schools error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@router.delete("/delete", status_code=204)
+def delete_school(
+    delete_data: SchoolDelete,
+    user: dict = Depends(require_admin)
+):
+    """
+    Delete a school and all associated users. Only admins can delete schools.
+    Requires admin_id and school_id in request body.
+    """
+    try:
+        # Verify the school exists
+        school = supabase.table("schools").select("id, admin_id").eq("id", str(delete_data.school_id)).execute()
+        if not school.data:
+            raise HTTPException(status_code=404, detail="School not found")
+        
+        # Verify the admin_id matches the school's admin
+        if school.data[0]["admin_id"] != str(delete_data.admin_id):
+            raise HTTPException(
+                status_code=403, 
+                detail="Admin ID does not match the school's admin"
+            )
+        
+        # Verify the requesting user is the admin
+        if user["id"] != str(delete_data.admin_id):
+            raise HTTPException(
+                status_code=403, 
+                detail="You can only delete schools where you are the admin"
+            )
+        
+        # Delete all users associated with the school
+        supabase.table("profiles").delete().eq("school_id", str(delete_data.school_id)).execute()
+        
+        # Delete the school
+        supabase.table("schools").delete().eq("id", str(delete_data.school_id)).execute()
+        
+        return None  # 204 No Content
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Delete school error: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
