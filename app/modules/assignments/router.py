@@ -32,6 +32,7 @@ def create_assignment(
             "description": assignment.description,
             "due_date": assignment.due_date.isoformat() if assignment.due_date else None,
             "file_url": assignment.file_url,
+            "total_points": assignment.total_points,
             "created_by": user["id"],
             "school_id": str(school_id),
             "created_at": datetime.utcnow().isoformat(),
@@ -40,12 +41,16 @@ def create_assignment(
 
         result = supabase.table("assignments").insert(assignment_data).execute()
         return AssignmentResponse(**result.data[0])
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        print(f"Create assignment error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
 
 @router.get("/class/{class_id}", response_model=list[AssignmentResponse])
 def get_class_assignments(
-    class_id: int,
+    class_id: str,                  # Changed from int to str
     school_id: UUID = Depends(get_current_school_id),
     user: dict = Depends(get_current_user)
 ):
@@ -60,7 +65,6 @@ def get_class_assignments(
 
         # Check permissions
         if user["role"] == "student":
-            # Check if student is enrolled
             enrollment = supabase.table("class_students").select("*").eq("class_id", class_id).eq("student_id", user["id"]).execute()
             if not enrollment.data:
                 raise HTTPException(status_code=403, detail="Not enrolled in this class")
@@ -69,12 +73,16 @@ def get_class_assignments(
 
         result = supabase.table("assignments").select("*").eq("class_id", class_id).eq("school_id", str(school_id)).execute()
         return [AssignmentResponse(**assignment) for assignment in result.data]
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        print(f"Get class assignments error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
 
 @router.get("/{assignment_id}", response_model=AssignmentResponse)
 def get_assignment(
-    assignment_id: int,
+    assignment_id: str,             # Changed from int to str
     school_id: UUID = Depends(get_current_school_id),
     user: dict = Depends(get_current_user)
 ):
@@ -93,7 +101,6 @@ def get_assignment(
 
         # Check permissions
         if user["role"] == "student":
-            # Check if student is enrolled in the class
             enrollment = supabase.table("class_students").select("*").eq("class_id", class_id).eq("student_id", user["id"]).execute()
             if not enrollment.data:
                 raise HTTPException(status_code=403, detail="Not enrolled in this class")
@@ -103,12 +110,16 @@ def get_assignment(
         # Remove the nested class data before returning
         assignment.pop("classes", None)
         return AssignmentResponse(**assignment)
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        print(f"Get assignment error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
 
 @router.put("/{assignment_id}", response_model=AssignmentResponse)
 def update_assignment(
-    assignment_id: int,
+    assignment_id: str,             # Changed from int to str
     assignment: AssignmentUpdate,
     school_id: UUID = Depends(get_current_school_id),
     user: dict = Depends(require_admin_or_teacher)
@@ -137,15 +148,21 @@ def update_assignment(
             update_data["due_date"] = assignment.due_date.isoformat()
         if assignment.file_url is not None:
             update_data["file_url"] = assignment.file_url
+        if assignment.total_points is not None:        # Added
+            update_data["total_points"] = assignment.total_points
 
         result = supabase.table("assignments").update(update_data).eq("id", assignment_id).eq("school_id", str(school_id)).execute()
         return AssignmentResponse(**result.data[0])
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        print(f"Update assignment error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
 
 @router.delete("/{assignment_id}")
 def delete_assignment(
-    assignment_id: int,
+    assignment_id: str,             # Changed from int to str
     school_id: UUID = Depends(get_current_school_id),
     user: dict = Depends(require_admin_or_teacher)
 ):
@@ -168,5 +185,8 @@ def delete_assignment(
         if not result.data:
             raise HTTPException(status_code=404, detail="Assignment not found")
         return {"message": "Assignment deleted successfully"}
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        print(f"Delete assignment error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
