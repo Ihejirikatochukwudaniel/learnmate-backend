@@ -50,7 +50,7 @@ def create_assignment(
 
 @router.get("/class/{class_id}", response_model=list[AssignmentResponse])
 def get_class_assignments(
-    class_id: str,                  # Changed from int to str
+    class_id: str,
     school_id: UUID = Depends(get_current_school_id),
     user: dict = Depends(get_current_user)
 ):
@@ -80,9 +80,57 @@ def get_class_assignments(
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
+@router.get("/student/{student_id}", response_model=list[AssignmentResponse])
+def get_student_assignments(
+    student_id: str,
+    school_id: UUID = Depends(get_current_school_id),
+    user: dict = Depends(get_current_user)
+):
+    """
+    Get all assignments for a student from all classes they're enrolled in, scoped to school.
+    Students can only view their own assignments. Teachers and admins can view any student's assignments.
+    """
+    try:
+        # Permission check: students can only view their own assignments
+        if user["role"] == "student" and user["id"] != student_id:
+            raise HTTPException(status_code=403, detail="You can only view your own assignments")
+        
+        # Verify the student exists and belongs to the same school
+        student = supabase.table("profiles").select("id, school_id, role").eq("id", student_id).execute()
+        if not student.data:
+            raise HTTPException(status_code=404, detail="Student not found")
+        
+        if student.data[0]["school_id"] != str(school_id):
+            raise HTTPException(status_code=403, detail="Student not in your school")
+        
+        if student.data[0]["role"] != "student":
+            raise HTTPException(status_code=400, detail="User is not a student")
+        
+        # Get all classes the student is enrolled in
+        enrollments = supabase.table("class_students").select("class_id").eq("student_id", student_id).execute()
+        
+        if not enrollments.data:
+            # Student not enrolled in any classes, return empty array
+            return []
+        
+        # Extract class IDs
+        class_ids = [enrollment["class_id"] for enrollment in enrollments.data]
+        
+        # Get all assignments for these classes, scoped to school
+        result = supabase.table("assignments").select("*").in_("class_id", class_ids).eq("school_id", str(school_id)).order("due_date", desc=False).execute()
+        
+        return [AssignmentResponse(**assignment) for assignment in result.data]
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Get student assignments error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
 @router.get("/{assignment_id}", response_model=AssignmentResponse)
 def get_assignment(
-    assignment_id: str,             # Changed from int to str
+    assignment_id: str,
     school_id: UUID = Depends(get_current_school_id),
     user: dict = Depends(get_current_user)
 ):
@@ -119,7 +167,7 @@ def get_assignment(
 
 @router.put("/{assignment_id}", response_model=AssignmentResponse)
 def update_assignment(
-    assignment_id: str,             # Changed from int to str
+    assignment_id: str,
     assignment: AssignmentUpdate,
     school_id: UUID = Depends(get_current_school_id),
     user: dict = Depends(require_admin_or_teacher)
@@ -148,7 +196,7 @@ def update_assignment(
             update_data["due_date"] = assignment.due_date.isoformat()
         if assignment.file_url is not None:
             update_data["file_url"] = assignment.file_url
-        if assignment.total_points is not None:        # Added
+        if assignment.total_points is not None:
             update_data["total_points"] = assignment.total_points
 
         result = supabase.table("assignments").update(update_data).eq("id", assignment_id).eq("school_id", str(school_id)).execute()
@@ -162,7 +210,7 @@ def update_assignment(
 
 @router.delete("/{assignment_id}")
 def delete_assignment(
-    assignment_id: str,             # Changed from int to str
+    assignment_id: str,
     school_id: UUID = Depends(get_current_school_id),
     user: dict = Depends(require_admin_or_teacher)
 ):
