@@ -28,6 +28,10 @@ def submit_assignment(
 
         assignment = assignment_result.data[0]
         class_id = assignment["class_id"]
+        
+        # Verify the provided class_id matches the assignment's class_id
+        if str(submission.class_id) != class_id:
+            raise HTTPException(status_code=400, detail="Class ID does not match assignment's class")
 
         # Check if student is enrolled in the class
         enrollment = supabase.table("class_students").select("*").eq("class_id", class_id).eq("student_id", user["id"]).execute()
@@ -41,6 +45,7 @@ def submit_assignment(
 
         submission_data = {
             "assignment_id": submission.assignment_id,
+            "class_id": str(submission.class_id),
             "student_id": user["id"],
             "submitted_at": datetime.utcnow().isoformat(),
             "file_url": submission.file_url,
@@ -50,12 +55,16 @@ def submit_assignment(
 
         result = supabase.table("submissions").insert(submission_data).execute()
         return SubmissionResponse(**result.data[0])
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        print(f"Submit assignment error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
 
 @router.get("/assignment/{assignment_id}", response_model=list[SubmissionResponse])
 def get_assignment_submissions(
-    assignment_id: int,
+    assignment_id: str,
     school_id: UUID = Depends(get_current_school_id),
     user: dict = Depends(require_admin_or_teacher)
 ):
@@ -76,8 +85,12 @@ def get_assignment_submissions(
 
         result = supabase.table("submissions").select("*").eq("assignment_id", assignment_id).eq("school_id", str(school_id)).execute()
         return [SubmissionResponse(**submission) for submission in result.data]
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        print(f"Get assignment submissions error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
 
 @router.get("/my", response_model=list[SubmissionResponse])
 def get_my_submissions(
@@ -93,12 +106,16 @@ def get_my_submissions(
 
         result = supabase.table("submissions").select("*").eq("student_id", user["id"]).eq("school_id", str(school_id)).execute()
         return [SubmissionResponse(**submission) for submission in result.data]
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        print(f"Get my submissions error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
 
 @router.get("/{submission_id}", response_model=SubmissionResponse)
 def get_submission(
-    submission_id: int,
+    submission_id: str,
     school_id: UUID = Depends(get_current_school_id),
     user: dict = Depends(get_current_user)
 ):
@@ -123,12 +140,16 @@ def get_submission(
         # Remove nested data before returning
         submission.pop("assignments", None)
         return SubmissionResponse(**submission)
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        print(f"Get submission error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
 
 @router.put("/{submission_id}", response_model=SubmissionResponse)
 def update_submission(
-    submission_id: int,
+    submission_id: str,
     submission: SubmissionUpdate,
     school_id: UUID = Depends(get_current_school_id),
     user: dict = Depends(get_current_user)
@@ -156,12 +177,16 @@ def update_submission(
             return SubmissionResponse(**result.data[0])
         else:
             return SubmissionResponse(**existing.data[0])
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        print(f"Update submission error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
 
 @router.delete("/{submission_id}")
 def delete_submission(
-    submission_id: int,
+    submission_id: str,
     school_id: UUID = Depends(get_current_school_id),
     user: dict = Depends(require_admin_or_teacher)
 ):
@@ -184,5 +209,8 @@ def delete_submission(
         if not result.data:
             raise HTTPException(status_code=404, detail="Submission not found")
         return {"message": "Submission deleted successfully"}
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        print(f"Delete submission error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
