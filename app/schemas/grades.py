@@ -4,8 +4,8 @@ from datetime import datetime
 from uuid import UUID
 
 class GradeCreate(BaseModel):
-    submission_id: int
-    grade: str  # 'A', 'B', 'C', 'D', 'F' or numeric
+    submission_id: str          # Changed from int to str
+    grade: str                  # 'A', 'B', 'C', 'D', 'F' or numeric
     feedback: Optional[str] = None
 
 class GradeUpdate(BaseModel):
@@ -13,10 +13,13 @@ class GradeUpdate(BaseModel):
     feedback: Optional[str] = None
 
 class GradeResponse(BaseModel):
-    id: int
-    submission_id: int
+    id: str                     # Changed from int to str
+    submission_id: str          # Changed from int to str
     grade: str
     feedback: Optional[str] = None
     graded_by: str
     school_id: UUID
     graded_at: datetime
+
+    class Config:
+        populate_by_name = True

@@ -45,12 +45,16 @@ def grade_submission(
 
         result = supabase.table("grades").insert(grade_data).execute()
         return GradeResponse(**result.data[0])
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        print(f"Grade submission error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
 
 @router.get("/submission/{submission_id}", response_model=GradeResponse)
 def get_submission_grade(
-    submission_id: int,
+    submission_id: str,        # Changed from int to str
     school_id: UUID = Depends(get_current_school_id),
     user: dict = Depends(get_current_user)
 ):
@@ -76,8 +80,12 @@ def get_submission_grade(
         # Remove nested data before returning
         grade.pop("submissions", None)
         return GradeResponse(**grade)
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        print(f"Get submission grade error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
 
 @router.get("/my", response_model=list[GradeResponse])
 def get_my_grades(
@@ -93,12 +101,16 @@ def get_my_grades(
 
         result = supabase.table("grades").select("*, submissions(assignment_id, assignments(title))").eq("submissions.student_id", user["id"]).eq("school_id", str(school_id)).execute()
         return [GradeResponse(**grade) for grade in result.data]
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        print(f"Get my grades error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
 
 @router.get("/assignment/{assignment_id}", response_model=list[GradeResponse])
 def get_assignment_grades(
-    assignment_id: int,
+    assignment_id: str,        # Changed from int to str
     school_id: UUID = Depends(get_current_school_id),
     user: dict = Depends(require_admin_or_teacher)
 ):
@@ -119,12 +131,16 @@ def get_assignment_grades(
 
         result = supabase.table("grades").select("*, submissions(student_id)").eq("submissions.assignment_id", assignment_id).eq("school_id", str(school_id)).execute()
         return [GradeResponse(**grade) for grade in result.data]
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        print(f"Get assignment grades error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
 
 @router.put("/{grade_id}", response_model=GradeResponse)
 def update_grade(
-    grade_id: int,
+    grade_id: str,             # Changed from int to str
     grade: GradeUpdate,
     school_id: UUID = Depends(get_current_school_id),
     user: dict = Depends(require_admin_or_teacher)
@@ -155,13 +171,18 @@ def update_grade(
             result = supabase.table("grades").update(update_data).eq("id", grade_id).eq("school_id", str(school_id)).execute()
             return GradeResponse(**result.data[0])
         else:
-            return GradeResponse(**existing.data[0])
+            record.pop("submissions", None)
+            return GradeResponse(**record)
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        print(f"Update grade error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
 
 @router.delete("/{grade_id}")
 def delete_grade(
-    grade_id: int,
+    grade_id: str,             # Changed from int to str
     school_id: UUID = Depends(get_current_school_id),
     user: dict = Depends(require_admin_or_teacher)
 ):
@@ -185,5 +206,8 @@ def delete_grade(
         if not result.data:
             raise HTTPException(status_code=404, detail="Grade not found")
         return {"message": "Grade deleted successfully"}
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        print(f"Delete grade error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
