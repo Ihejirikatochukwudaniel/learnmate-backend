@@ -54,7 +54,7 @@ def grade_submission(
 
 @router.get("/submission/{submission_id}", response_model=GradeResponse)
 def get_submission_grade(
-    submission_id: str,        # Changed from int to str
+    submission_id: str,
     school_id: UUID = Depends(get_current_school_id),
     user: dict = Depends(get_current_user)
 ):
@@ -99,7 +99,19 @@ def get_my_grades(
         if user["role"] != "student":
             raise HTTPException(status_code=403, detail="Only students can view their grades")
 
-        result = supabase.table("grades").select("*, submissions(assignment_id, assignments(title))").eq("submissions.student_id", user["id"]).eq("school_id", str(school_id)).execute()
+        # First, get all submissions by this student
+        submissions = supabase.table("submissions").select("id").eq("student_id", user["id"]).eq("school_id", str(school_id)).execute()
+        
+        if not submissions.data:
+            # No submissions yet, return empty array
+            return []
+        
+        # Extract submission IDs
+        submission_ids = [sub["id"] for sub in submissions.data]
+        
+        # Get all grades for these submissions
+        result = supabase.table("grades").select("*").in_("submission_id", submission_ids).eq("school_id", str(school_id)).execute()
+        
         return [GradeResponse(**grade) for grade in result.data]
     except HTTPException:
         raise
@@ -110,7 +122,7 @@ def get_my_grades(
 
 @router.get("/assignment/{assignment_id}", response_model=list[GradeResponse])
 def get_assignment_grades(
-    assignment_id: str,        # Changed from int to str
+    assignment_id: str,
     school_id: UUID = Depends(get_current_school_id),
     user: dict = Depends(require_admin_or_teacher)
 ):
@@ -129,7 +141,19 @@ def get_assignment_grades(
         if user["role"] == "teacher" and teacher_id != user["id"]:
             raise HTTPException(status_code=403, detail="Access denied")
 
-        result = supabase.table("grades").select("*, submissions(student_id)").eq("submissions.assignment_id", assignment_id).eq("school_id", str(school_id)).execute()
+        # First, get all submissions for this assignment
+        submissions = supabase.table("submissions").select("id").eq("assignment_id", assignment_id).eq("school_id", str(school_id)).execute()
+        
+        if not submissions.data:
+            # No submissions yet, return empty array
+            return []
+        
+        # Extract submission IDs
+        submission_ids = [sub["id"] for sub in submissions.data]
+        
+        # Get all grades for these submissions
+        result = supabase.table("grades").select("*").in_("submission_id", submission_ids).eq("school_id", str(school_id)).execute()
+        
         return [GradeResponse(**grade) for grade in result.data]
     except HTTPException:
         raise
@@ -140,7 +164,7 @@ def get_assignment_grades(
 
 @router.put("/{grade_id}", response_model=GradeResponse)
 def update_grade(
-    grade_id: str,             # Changed from int to str
+    grade_id: str,
     grade: GradeUpdate,
     school_id: UUID = Depends(get_current_school_id),
     user: dict = Depends(require_admin_or_teacher)
@@ -182,7 +206,7 @@ def update_grade(
 
 @router.delete("/{grade_id}")
 def delete_grade(
-    grade_id: str,             # Changed from int to str
+    grade_id: str,
     school_id: UUID = Depends(get_current_school_id),
     user: dict = Depends(require_admin_or_teacher)
 ):
