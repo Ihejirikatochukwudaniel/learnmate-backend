@@ -116,7 +116,7 @@ def school_analytics(school_id: str, _super: str = Depends(require_superuser)):
         school_name = school_data[0].get('school_name')
 
         # profiles for the school
-        profiles_resp = supabase.table('profiles').select('id,role,last_login').eq('school_id', school_id).execute()
+        profiles_resp = supabase.table('profiles').select('id,role,last_login,created_at').eq('school_id', school_id).execute()
         profiles = _extract_data(profiles_resp) or []
 
         total_users = len(profiles)
@@ -124,31 +124,45 @@ def school_analytics(school_id: str, _super: str = Depends(require_superuser)):
         users_by_role = {}
         now = datetime.utcnow()
         thirty_days = now - timedelta(days=30)
+        
         for p in profiles:
             role = p.get('role') or 'unknown'
             users_by_role[role] = users_by_role.get(role, 0) + 1
-            last_login = p.get('last_login')
+            
+            # Check last_login OR created_at as fallback
             try:
+                last_login = p.get('last_login')
+                created_at = p.get('created_at')
+                
                 if last_login:
-                    # Handle both string and datetime objects
                     if isinstance(last_login, str):
                         dt = datetime.fromisoformat(last_login.replace('Z', '+00:00'))
                     else:
                         dt = last_login
                     if dt >= thirty_days:
                         active_users += 1
-            except Exception:
-                # ignore parse errors
+                elif created_at:
+                    if isinstance(created_at, str):
+                        dt = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+                    else:
+                        dt = created_at
+                    if dt >= thirty_days:
+                        active_users += 1
+            except Exception as e:
+                logger.debug(f"Error parsing login date for user {p.get('id')}: {e}")
                 pass
 
         # classes
-        classes_resp = supabase.table('classes').select('id,updated_at').eq('school_id', school_id).execute()
+        classes_resp = supabase.table('classes').select('id,updated_at,created_at').eq('school_id', school_id).execute()
         classes = _extract_data(classes_resp) or []
         total_classes = len(classes)
         active_classes = 0
+        
         for c in classes:
             try:
                 updated = c.get('updated_at')
+                created = c.get('created_at')
+                
                 if updated:
                     if isinstance(updated, str):
                         dt = datetime.fromisoformat(updated.replace('Z', '+00:00'))
@@ -156,7 +170,15 @@ def school_analytics(school_id: str, _super: str = Depends(require_superuser)):
                         dt = updated
                     if dt >= thirty_days:
                         active_classes += 1
-            except Exception:
+                elif created:
+                    if isinstance(created, str):
+                        dt = datetime.fromisoformat(created.replace('Z', '+00:00'))
+                    else:
+                        dt = created
+                    if dt >= thirty_days:
+                        active_classes += 1
+            except Exception as e:
+                logger.debug(f"Error parsing date for class {c.get('id')}: {e}")
                 pass
 
         # attendance for classes in this school
@@ -164,15 +186,28 @@ def school_analytics(school_id: str, _super: str = Depends(require_superuser)):
         total_attendance_records = 0
         present_count = 0
         recent_attendance_activity = 0
+        
         if class_ids:
             att_resp = supabase.table('attendance').select('id,class_id,date,status').in_('class_id', class_ids).execute()
             atts = _extract_data(att_resp) or []
             total_attendance_records = len(atts)
             seven_days = now - timedelta(days=7)
+            
             for a in atts:
                 status_val = a.get('status')
-                if status_val and str(status_val).lower() == 'present':
+                
+                # Handle boolean status: true = present, false = absent
+                is_present = False
+                if isinstance(status_val, bool):
+                    is_present = status_val
+                elif status_val is not None:
+                    status_str = str(status_val).lower().strip()
+                    if status_str in ['true', '1', 'present', 'p']:
+                        is_present = True
+                
+                if is_present:
                     present_count += 1
+                
                 try:
                     date_val = a.get('date')
                     if date_val:
@@ -182,7 +217,8 @@ def school_analytics(school_id: str, _super: str = Depends(require_superuser)):
                             dt = date_val
                         if dt >= seven_days:
                             recent_attendance_activity += 1
-                except Exception:
+                except Exception as e:
+                    logger.debug(f"Error parsing attendance date: {e}")
                     pass
 
         attendance_rate = round((present_count / total_attendance_records * 100), 2) if total_attendance_records > 0 else None
@@ -213,6 +249,7 @@ def school_analytics(school_id: str, _super: str = Depends(require_superuser)):
 def platform_analytics(_super: str = Depends(require_superuser)):
     try:
         now = datetime.utcnow()
+        
         # schools
         schools_resp = supabase.table('schools').select('id,school_name,status').execute()
         schools = _extract_data(schools_resp) or []
@@ -222,7 +259,6 @@ def platform_analytics(_super: str = Depends(require_superuser)):
         active_schools = 0
         for s in schools:
             status_val = s.get('status')
-            # Convert to string and check
             if status_val is not None:
                 status_str = str(status_val).lower()
                 if status_str in ['active', 'true', '1']:
@@ -232,7 +268,7 @@ def platform_analytics(_super: str = Depends(require_superuser)):
                 active_schools += 1
 
         # users
-        users_resp = supabase.table('profiles').select('id,role,school_id,last_login').execute()
+        users_resp = supabase.table('profiles').select('id,role,school_id,last_login,created_at').execute()
         users = _extract_data(users_resp) or []
         total_users = len(users)
         thirty_days = now - timedelta(days=30)
@@ -249,8 +285,12 @@ def platform_analytics(_super: str = Depends(require_superuser)):
             if sid:
                 users_by_school[sid] = users_by_school.get(sid, 0) + 1
             
+            # Check last_login OR created_at as fallback
             try:
                 last_login = u.get('last_login')
+                created_at = u.get('created_at')
+                
+                # Try last_login first
                 if last_login:
                     if isinstance(last_login, str):
                         dt = datetime.fromisoformat(last_login.replace('Z', '+00:00'))
@@ -258,11 +298,20 @@ def platform_analytics(_super: str = Depends(require_superuser)):
                         dt = last_login
                     if dt >= thirty_days:
                         active_users += 1
-            except Exception:
+                # If no last_login, use created_at as fallback (newly created = active)
+                elif created_at:
+                    if isinstance(created_at, str):
+                        dt = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+                    else:
+                        dt = created_at
+                    if dt >= thirty_days:
+                        active_users += 1
+            except Exception as e:
+                logger.debug(f"Error parsing login date for user {u.get('id')}: {e}")
                 pass
 
         # classes
-        classes_resp = supabase.table('classes').select('id,updated_at,school_id').execute()
+        classes_resp = supabase.table('classes').select('id,updated_at,created_at,school_id').execute()
         classes = _extract_data(classes_resp) or []
         total_classes = len(classes)
         active_classes = 0
@@ -274,8 +323,12 @@ def platform_analytics(_super: str = Depends(require_superuser)):
             if class_id:
                 class_to_school[class_id] = school_id
             
+            # Check updated_at OR created_at as fallback
             try:
                 updated = c.get('updated_at')
+                created = c.get('created_at')
+                
+                # Try updated_at first
                 if updated:
                     if isinstance(updated, str):
                         dt = datetime.fromisoformat(updated.replace('Z', '+00:00'))
@@ -283,7 +336,16 @@ def platform_analytics(_super: str = Depends(require_superuser)):
                         dt = updated
                     if dt >= thirty_days:
                         active_classes += 1
-            except Exception:
+                # If no updated_at, use created_at as fallback
+                elif created:
+                    if isinstance(created, str):
+                        dt = datetime.fromisoformat(created.replace('Z', '+00:00'))
+                    else:
+                        dt = created
+                    if dt >= thirty_days:
+                        active_classes += 1
+            except Exception as e:
+                logger.debug(f"Error parsing date for class {class_id}: {e}")
                 pass
 
         # attendance
@@ -297,7 +359,18 @@ def platform_analytics(_super: str = Depends(require_superuser)):
         
         for a in atts:
             status_val = a.get('status')
-            if status_val and str(status_val).lower() == 'present':
+            
+            # Handle boolean status: true = present, false = absent
+            is_present = False
+            if isinstance(status_val, bool):
+                is_present = status_val  # Direct boolean check
+            elif status_val is not None:
+                # Fallback for string values
+                status_str = str(status_val).lower().strip()
+                if status_str in ['true', '1', 'present', 'p']:
+                    is_present = True
+            
+            if is_present:
                 present_count += 1
             
             try:
@@ -309,7 +382,8 @@ def platform_analytics(_super: str = Depends(require_superuser)):
                         dt = date_val
                     if dt >= seven_days:
                         recent_activity += 1
-            except Exception:
+            except Exception as e:
+                logger.debug(f"Error parsing attendance date: {e}")
                 pass
             
             # Track attendance per school
@@ -318,10 +392,10 @@ def platform_analytics(_super: str = Depends(require_superuser)):
             if sid:
                 rec = attendance_by_school.setdefault(sid, {'present': 0, 'total': 0})
                 rec['total'] += 1
-                if status_val and str(status_val).lower() == 'present':
+                if is_present:
                     rec['present'] += 1
 
-        overall_attendance_rate = round((present_count / total_attendance_records * 100), 2) if total_attendance_records > 0 else None
+        overall_attendance_rate = round((present_count / total_attendance_records * 100), 2) if total_attendance_records > 0 else 0.0
 
         # get school names map
         school_map = {s.get('id'): s for s in schools}
@@ -358,6 +432,8 @@ def platform_analytics(_super: str = Depends(require_superuser)):
             key=lambda x: x['attendance_rate'],
             reverse=True
         )[:10]
+
+        logger.info(f"Platform analytics: active_users={active_users}, active_classes={active_classes}, present={present_count}/{total_attendance_records}, rate={overall_attendance_rate}%")
 
         return PlatformAnalytics(
             total_schools=total_schools,
