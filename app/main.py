@@ -18,7 +18,7 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# Custom OpenAPI schema - simplified since we use user ID-based auth
+# Custom OpenAPI schema
 def custom_openapi():
     if app.openapi_schema:
         return app.openapi_schema
@@ -28,7 +28,6 @@ def custom_openapi():
         description="Education platform backend with role-based access control",
         routes=app.routes,
     )
-
     app.openapi_schema = openapi_schema
     return app.openapi_schema
 
@@ -37,16 +36,22 @@ app.openapi = custom_openapi
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins for development
+    allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["*"],  # Allow all HTTP methods
-    allow_headers=["*"],  # Allow all headers
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
-# Root route (test)
+# Root route
 @app.get("/")
 def root():
     return {"message": "Hello World from LearnMate!"}
+
+# Leapcell health check endpoints (both spellings used by the proxy)
+@app.get("/kaithheathcheck")
+@app.get("/kaithhealthcheck")
+def leapcell_health_check():
+    return {"status": "ok"}
 
 # Health check route
 @app.get("/health")
@@ -54,7 +59,6 @@ def health_check():
     """Check if the service and database connection are healthy"""
     try:
         from app.db.supabase import supabase
-        # Test database connection
         test_response = supabase.table('profiles').select('id').limit(1).execute()
         return {
             "status": "healthy",
