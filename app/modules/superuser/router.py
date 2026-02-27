@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import Optional, List, Dict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import logging
 
 from app.db.supabase import supabase
@@ -108,6 +108,9 @@ def list_schools(
 @router.get('/superuser/schools/{school_id}/analytics', response_model=SchoolAnalytics)
 def school_analytics(school_id: str, _super: str = Depends(require_superuser)):
     try:
+        # FIXED: Use timezone-aware datetime
+        now = datetime.now(timezone.utc)
+        
         # school info
         school_resp = supabase.table('schools').select('id,school_name').eq('id', school_id).execute()
         school_data = _extract_data(school_resp) or []
@@ -122,7 +125,6 @@ def school_analytics(school_id: str, _super: str = Depends(require_superuser)):
         total_users = len(profiles)
         active_users = 0
         users_by_role = {}
-        now = datetime.utcnow()
         thirty_days = now - timedelta(days=30)
         
         for p in profiles:
@@ -223,6 +225,8 @@ def school_analytics(school_id: str, _super: str = Depends(require_superuser)):
 
         attendance_rate = round((present_count / total_attendance_records * 100), 2) if total_attendance_records > 0 else None
 
+        logger.info(f"School {school_id} analytics: active_users={active_users}/{total_users}, active_classes={active_classes}/{total_classes}, attendance_rate={attendance_rate}%")
+
         return SchoolAnalytics(
             school_id=school_id,
             school_name=school_name,
@@ -248,7 +252,8 @@ def school_analytics(school_id: str, _super: str = Depends(require_superuser)):
 @router.get('/superuser/analytics/platform', response_model=PlatformAnalytics)
 def platform_analytics(_super: str = Depends(require_superuser)):
     try:
-        now = datetime.utcnow()
+        # FIXED: Use timezone-aware datetime
+        now = datetime.now(timezone.utc)
         
         # schools
         schools_resp = supabase.table('schools').select('id,school_name,status').execute()
@@ -433,7 +438,7 @@ def platform_analytics(_super: str = Depends(require_superuser)):
             reverse=True
         )[:10]
 
-        logger.info(f"Platform analytics: active_users={active_users}, active_classes={active_classes}, present={present_count}/{total_attendance_records}, rate={overall_attendance_rate}%")
+        logger.info(f"Platform analytics: active_users={active_users}/{total_users}, active_classes={active_classes}/{total_classes}, present={present_count}/{total_attendance_records}, rate={overall_attendance_rate}%")
 
         return PlatformAnalytics(
             total_schools=total_schools,
