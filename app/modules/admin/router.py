@@ -69,7 +69,7 @@ def get_all_users(school_id: UUID = Depends(get_current_school_id)):
 @router.post("/users")
 def create_user(
     user_data: ProfileCreate,
-    admin_user_id: str = Depends(require_admin_by_uuid)
+    admin_user: dict = Depends(require_admin_by_uuid)  # FIXED: Changed to receive dict
 ):
     """
     Create a new user (teacher or student) in the current user's school. Admin only.
@@ -77,6 +77,12 @@ def create_user(
     FIXED: Queries school_id from database instead of relying on JWT to avoid race conditions.
     """
     try:
+        # FIXED: Extract user_id from the dict (handles both 'id' and 'user_id' keys)
+        admin_user_id = admin_user.get("id") or admin_user.get("user_id")
+        
+        if not admin_user_id:
+            raise HTTPException(status_code=403, detail="Could not identify admin user")
+        
         # CRITICAL FIX: Get school_id from database, not from JWT/dependency
         admin_profile = supabase.table("profiles").select("school_id, role").eq("id", admin_user_id).execute()
         if not admin_profile.data:
@@ -93,7 +99,8 @@ def create_user(
         # Debug logging
         print("=" * 50)
         print("DEBUG: create_user function called")
-        print(f"DEBUG: Admin ID: {admin_user_id}")
+        print(f"DEBUG: Admin User Object: {admin_user}")
+        print(f"DEBUG: Admin ID extracted: {admin_user_id}")
         print(f"DEBUG: School ID from database: {school_id}")
         print(f"DEBUG: user_data.email: '{user_data.email}'")
         print(f"DEBUG: user_data.role: '{user_data.role}'")
