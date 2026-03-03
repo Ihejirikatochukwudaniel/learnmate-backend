@@ -19,8 +19,6 @@ def get_admin_metrics(school_id: UUID = Depends(get_current_school_id)):
         total_users_count = total_users.count if hasattr(total_users, 'count') else len(total_users.data)
 
         # Active users (users with recent activity - last 30 days)
-        # For simplicity, we'll count users who have logged in recently
-        # This would need activity_logs table to be properly implemented
         active_users_count = total_users_count  # Placeholder
 
         # Attendance count (total attendance records in school)
@@ -41,8 +39,6 @@ def get_admin_metrics(school_id: UUID = Depends(get_current_school_id)):
 
         # Students enrolled in school
         students_enrolled = supabase.table("class_students").select("student_id", count="exact").execute()
-        # This is harder to scope, as class_students doesn't have school_id directly
-        # For now, we'll leave it as is, but ideally we'd join with classes
         students_enrolled_count = students_enrolled.count if hasattr(students_enrolled, 'count') else len(students_enrolled.data)
 
         return {
@@ -57,6 +53,7 @@ def get_admin_metrics(school_id: UUID = Depends(get_current_school_id)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch metrics: {str(e)}")
 
+
 @router.get("/users")
 def get_all_users(school_id: UUID = Depends(get_current_school_id)):
     """
@@ -68,26 +65,38 @@ def get_all_users(school_id: UUID = Depends(get_current_school_id)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch users: {str(e)}")
 
+
 @router.post("/users")
 def create_user(
     user_data: ProfileCreate,
-    school_id: UUID = Depends(get_current_school_id)
+    admin_user_id: str = Depends(require_admin_by_uuid)
 ):
     """
     Create a new user (teacher or student) in the current user's school. Admin only.
     Creates user in Supabase auth.users and profiles table.
-    Uses user ID-based admin verification.
+    FIXED: Queries school_id from database instead of relying on JWT to avoid race conditions.
     """
     try:
+        # CRITICAL FIX: Get school_id from database, not from JWT/dependency
+        admin_profile = supabase.table("profiles").select("school_id, role").eq("id", admin_user_id).execute()
+        if not admin_profile.data:
+            raise HTTPException(status_code=403, detail="Admin profile not found")
+        
+        admin_data = admin_profile.data[0]
+        if admin_data.get("role") != "admin":
+            raise HTTPException(status_code=403, detail="User is not an admin")
+        
+        school_id = admin_data.get("school_id")
+        if not school_id:
+            raise HTTPException(status_code=400, detail="Admin not assigned to a school. Please create or join a school first.")
+        
         # Debug logging
         print("=" * 50)
         print("DEBUG: create_user function called")
-        print(f"DEBUG: Raw user_data object: {user_data}")
-        print(f"DEBUG: user_data.email: '{user_data.email}' (type: {type(user_data.email)})")
-        print(f"DEBUG: user_data.first_name: '{user_data.first_name}' (type: {type(user_data.first_name)})")
-        print(f"DEBUG: user_data.last_name: '{user_data.last_name}' (type: {type(user_data.last_name)})")
-        print(f"DEBUG: user_data.role: '{user_data.role}' (type: {type(user_data.role)})")
-        print(f"DEBUG: user_data.password: '{user_data.password}' (type: {type(user_data.password)})")
+        print(f"DEBUG: Admin ID: {admin_user_id}")
+        print(f"DEBUG: School ID from database: {school_id}")
+        print(f"DEBUG: user_data.email: '{user_data.email}'")
+        print(f"DEBUG: user_data.role: '{user_data.role}'")
         print("=" * 50)
 
         # Validate role (allow admin, teacher, student)
@@ -97,7 +106,6 @@ def create_user(
         # Generate password if not provided
         password = user_data.password
         if not password:
-            # Generate a secure 12-character password
             alphabet = string.ascii_letters + string.digits + string.punctuation
             password = ''.join(secrets.choice(alphabet) for i in range(12))
 
@@ -106,21 +114,20 @@ def create_user(
             auth_response = supabase.auth.admin.create_user({
                 "email": user_data.email,
                 "password": password,
-                "email_confirm": False,  # Disable email confirmation
+                "email_confirm": False,
                 "user_metadata": {
                     "firstName": user_data.first_name,
                     "lastName": user_data.last_name,
-                    "role": user_data.role
+                    "role": user_data.role,
+                    "school_id": school_id  # Include school_id in auth metadata
                 }
             })
             user_id = auth_response.user.id
         except Exception as auth_error:
-            # Extract more detailed error information
             error_detail = str(auth_error)
             if hasattr(auth_error, '__dict__'):
                 error_detail += f" | Details: {auth_error.__dict__}"
 
-            # Check for common error patterns
             if "email" in error_detail.lower() and ("already" in error_detail.lower() or "exists" in error_detail.lower()):
                 error_detail = f"Email '{user_data.email}' is already registered. Please use a different email address."
             elif "password" in error_detail.lower():
@@ -139,9 +146,8 @@ def create_user(
                 "last_name": user_data.last_name,
                 "full_name": f"{user_data.first_name} {user_data.last_name}",
                 "role": user_data.role,
-                "school_id": str(school_id)
+                "school_id": school_id  # Use school_id from database query
             }
-            # Use upsert to handle case where profile might already exist from a trigger
             supabase.table("profiles").upsert(profile_data).execute()
             
         except Exception as profile_error:
@@ -158,17 +164,19 @@ def create_user(
             "email": user_data.email,
             "role": user_data.role,
             "first_name": user_data.first_name,
-            "last_name": user_data.last_name
+            "last_name": user_data.last_name,
+            "school_id": school_id
         }
         if not user_data.password:
             response["generated_password"] = password
 
         return response
     except HTTPException:
-        # Re-raise HTTP exceptions as-is
         raise
     except Exception as e:
+        print(f"Unexpected error creating user: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Unexpected error creating user: {str(e)}")
+
 
 @router.post("/bootstrap-admin")
 def bootstrap_admin(user_data: ProfileCreate):
@@ -191,7 +199,6 @@ def bootstrap_admin(user_data: ProfileCreate):
         # Generate password if not provided
         password = user_data.password
         if not password:
-            # Generate a secure 12-character password
             alphabet = string.ascii_letters + string.digits + string.punctuation
             password = ''.join(secrets.choice(alphabet) for i in range(12))
 
@@ -200,7 +207,7 @@ def bootstrap_admin(user_data: ProfileCreate):
             auth_response = supabase.auth.admin.create_user({
                 "email": user_data.email,
                 "password": password,
-                "email_confirm": False,  # Disable email confirmation
+                "email_confirm": False,
                 "user_metadata": {
                     "firstName": user_data.first_name,
                     "lastName": user_data.last_name,
@@ -224,11 +231,9 @@ def bootstrap_admin(user_data: ProfileCreate):
                 "full_name": f"{user_data.first_name} {user_data.last_name}",
                 "role": user_data.role
             }
-            # Use upsert to handle case where profile might already exist from a trigger
             supabase.table("profiles").upsert(profile_data).execute()
             
         except Exception as profile_error:
-            # If profile creation fails, clean up the auth user
             try:
                 supabase.auth.admin.delete_user(user_id)
             except Exception as cleanup_error:
@@ -250,10 +255,9 @@ def bootstrap_admin(user_data: ProfileCreate):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to bootstrap admin: {str(e)}")
 
+
 @router.delete("/users/{user_id}")
-def delete_user(
-    user_id: str
-):
+def delete_user(user_id: str):
     """
     Delete a user and all associated data from the current user's school. Admin only.
     This will permanently remove the user from auth.users and profiles table,
@@ -287,9 +291,7 @@ def delete_user(
         try:
             supabase.auth.admin.delete_user(user_id)
         except Exception as auth_error:
-            # If auth deletion fails, try to restore the profile (though this might not work due to cascades)
             print(f"WARNING: Failed to delete auth user after profile deletion: {auth_error}")
-            # Note: We don't re-create the profile since cascade deletes may have removed other data
             raise HTTPException(status_code=500, detail=f"Failed to delete auth user: {str(auth_error)}")
 
         return {
@@ -302,6 +304,7 @@ def delete_user(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Unexpected error deleting user: {str(e)}")
+
 
 @router.get("/activity")
 def get_recent_activity(

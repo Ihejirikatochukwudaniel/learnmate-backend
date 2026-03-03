@@ -40,11 +40,35 @@ def create_school(
 
         # Insert school
         result = supabase.table("schools").insert(school_data).execute()
+        if not result.data:
+            raise HTTPException(status_code=500, detail="Failed to create school")
         
         # Update the admin's profile with the school_id
-        supabase.table("profiles").update({
+        profile_update = supabase.table("profiles").update({
             "school_id": school_id
         }).eq("id", str(school.admin_user_id)).execute()
+        
+        if not profile_update.data:
+            raise HTTPException(status_code=500, detail="Failed to assign admin to school")
+        
+        # CRITICAL FIX: Verify the update was successful by re-querying
+        verify = supabase.table("profiles").select("id, school_id").eq("id", str(school.admin_user_id)).execute()
+        if not verify.data or verify.data[0].get("school_id") != school_id:
+            raise HTTPException(status_code=500, detail="School assignment verification failed")
+        
+        # ADDITIONAL FIX: Update auth user metadata to sync JWT
+        try:
+            supabase.auth.admin.update_user_by_id(
+                str(school.admin_user_id),
+                {
+                    "user_metadata": {
+                        "school_id": school_id
+                    }
+                }
+            )
+        except Exception as auth_error:
+            print(f"Warning: Failed to update auth metadata: {auth_error}")
+            # Don't fail the request, but log the warning
 
         return SchoolResponse(**result.data[0])
 
@@ -53,6 +77,7 @@ def create_school(
     except Exception as e:
         print(f"Create school error: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
+
 
 @router.get("/admin/schools", response_model=list[SchoolResponse])
 def get_all_schools(user: dict = Depends(require_admin)):
@@ -65,6 +90,7 @@ def get_all_schools(user: dict = Depends(require_admin)):
     except Exception as e:
         print(f"Get schools error: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
+
 
 @router.delete("/delete", status_code=204)
 def delete_school(
