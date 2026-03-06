@@ -1,10 +1,12 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from app.db.supabase import supabase
 from app.core.dependencies import require_admin_by_uuid, get_current_school_id, get_school_id_for_user
 from app.schemas.profiles import ProfileCreate
 import secrets
 import string
 from uuid import UUID
+from datetime import datetime, timedelta, timezone
+from typing import Optional
 
 router = APIRouter(tags=["Admin"])
 
@@ -69,7 +71,7 @@ def get_all_users(school_id: UUID = Depends(get_current_school_id)):
 @router.post("/users")
 def create_user(
     user_data: ProfileCreate,
-    admin_user: dict = Depends(require_admin_by_uuid)  # FIXED: Changed to receive dict
+    admin_user: dict = Depends(require_admin_by_uuid)
 ):
     """
     Create a new user (teacher or student) in the current user's school. Admin only.
@@ -126,7 +128,7 @@ def create_user(
                     "firstName": user_data.first_name,
                     "lastName": user_data.last_name,
                     "role": user_data.role,
-                    "school_id": school_id  # Include school_id in auth metadata
+                    "school_id": school_id
                 }
             })
             user_id = auth_response.user.id
@@ -153,12 +155,11 @@ def create_user(
                 "last_name": user_data.last_name,
                 "full_name": f"{user_data.first_name} {user_data.last_name}",
                 "role": user_data.role,
-                "school_id": school_id  # Use school_id from database query
+                "school_id": school_id
             }
             supabase.table("profiles").upsert(profile_data).execute()
             
         except Exception as profile_error:
-            # If profile creation fails, clean up the auth user
             try:
                 supabase.auth.admin.delete_user(user_id)
             except Exception as cleanup_error:
@@ -326,3 +327,218 @@ def get_recent_activity(
         return result.data
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch activity logs: {str(e)}")
+
+
+# NEW ANALYTICS ENDPOINTS
+
+@router.get("/schools/{school_id}/analytics/mau")
+def get_school_monthly_active_users(
+    school_id: UUID,
+    admin_id: UUID = Query(..., description="Admin user ID for authentication"),
+    month: Optional[int] = Query(None, ge=1, le=12, description="Month (1-12). Defaults to current month"),
+    year: Optional[int] = Query(None, ge=2020, description="Year. Defaults to current year")
+):
+    """
+    Get Monthly Active Users (MAU) for a specific school.
+    
+    For school admins only. Requires both school_id and admin_id.
+    MAU is calculated based on users with last_login or activity in the specified month.
+    Shows total MAU, active teachers, and active students separately.
+    
+    Query Parameters:
+    - school_id (path): UUID of the school
+    - admin_id (query): UUID of the admin user for authentication
+    - month (query, optional): Month number (1-12), defaults to current month
+    - year (query, optional): Year (e.g., 2026), defaults to current year
+    """
+    try:
+        # Verify the admin exists and has admin role
+        admin_check = supabase.table("profiles").select("id, role, school_id").eq("id", str(admin_id)).execute()
+        if not admin_check.data:
+            raise HTTPException(status_code=403, detail="Admin user not found")
+        
+        admin_data = admin_check.data[0]
+        
+        # Verify the user is an admin
+        if admin_data.get("role") != "admin":
+            raise HTTPException(status_code=403, detail="User is not an admin")
+        
+        # Verify the admin belongs to the requested school
+        if admin_data.get("school_id") != str(school_id):
+            raise HTTPException(status_code=403, detail="Admin does not have access to this school")
+        
+        # Verify the school exists
+        school_check = supabase.table("schools").select("id, school_name").eq("id", str(school_id)).execute()
+        if not school_check.data:
+            raise HTTPException(status_code=404, detail="School not found")
+        
+        school_name = school_check.data[0].get("school_name")
+        
+        now = datetime.now(timezone.utc)
+        
+        # Default to current month/year if not provided
+        target_month = month or now.month
+        target_year = year or now.year
+        
+        # Validate month and year
+        if target_month < 1 or target_month > 12:
+            raise HTTPException(status_code=400, detail="Month must be between 1 and 12")
+        if target_year < 2020 or target_year > now.year + 1:
+            raise HTTPException(status_code=400, detail=f"Year must be between 2020 and {now.year + 1}")
+        
+        # Calculate the start and end of the target month
+        month_start = datetime(target_year, target_month, 1, tzinfo=timezone.utc)
+        
+        # Calculate last day of month
+        if target_month == 12:
+            month_end = datetime(target_year + 1, 1, 1, tzinfo=timezone.utc)
+        else:
+            month_end = datetime(target_year, target_month + 1, 1, tzinfo=timezone.utc)
+        
+        # Get all users in the school
+        users_resp = supabase.table("profiles").select("id, role, last_login, created_at").eq("school_id", str(school_id)).execute()
+        users = users_resp.data or []
+        
+        total_mau = 0
+        active_teachers = 0
+        active_students = 0
+        active_admins = 0
+        
+        for user in users:
+            last_login = user.get("last_login")
+            created_at = user.get("created_at")
+            role = user.get("role")
+            
+            is_active = False
+            
+            # Check last_login first (primary indicator of activity)
+            if last_login:
+                try:
+                    if isinstance(last_login, str):
+                        login_dt = datetime.fromisoformat(last_login.replace('Z', '+00:00'))
+                    else:
+                        login_dt = last_login
+                    
+                    if month_start <= login_dt < month_end:
+                        is_active = True
+                except Exception:
+                    pass
+            
+            # Fallback to created_at if no last_login (newly created users count as active)
+            elif created_at:
+                try:
+                    if isinstance(created_at, str):
+                        created_dt = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+                    else:
+                        created_dt = created_at
+                    
+                    if month_start <= created_dt < month_end:
+                        is_active = True
+                except Exception:
+                    pass
+            
+            if is_active:
+                total_mau += 1
+                if role == "teacher":
+                    active_teachers += 1
+                elif role == "student":
+                    active_students += 1
+                elif role == "admin":
+                    active_admins += 1
+        
+        return {
+            "school_id": str(school_id),
+            "school_name": school_name,
+            "month": target_month,
+            "year": target_year,
+            "month_name": datetime(target_year, target_month, 1).strftime("%B"),
+            "period": f"{datetime(target_year, target_month, 1).strftime('%B %Y')}",
+            "total_mau": total_mau,
+            "active_teachers": active_teachers,
+            "active_students": active_students,
+            "active_admins": active_admins,
+            "breakdown": {
+                "teachers": active_teachers,
+                "students": active_students,
+                "admins": active_admins
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error getting school MAU: {str(e)}")
+        import traceback
+        print(f"Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Failed to get school MAU: {str(e)}")
+
+
+@router.get("/schools/{school_id}/analytics/feature-usage")
+def get_feature_usage(
+    school_id: UUID,
+    admin_id: UUID = Query(..., description="Admin user ID for authentication")
+):
+    """
+    Get feature usage statistics for a specific school.
+    
+    For school admins only. Requires both school_id and admin_id.
+    Shows counts for:
+    - Attendance records
+    - Assignments created
+    - Submissions
+    - Grades entered
+    """
+    try:
+        # Verify the admin exists and has admin role
+        admin_check = supabase.table("profiles").select("id, role, school_id").eq("id", str(admin_id)).execute()
+        if not admin_check.data:
+            raise HTTPException(status_code=403, detail="Admin user not found")
+        
+        admin_data = admin_check.data[0]
+        
+        # Verify the user is an admin
+        if admin_data.get("role") != "admin":
+            raise HTTPException(status_code=403, detail="User is not an admin")
+        
+        # Verify the admin belongs to the requested school
+        if admin_data.get("school_id") != str(school_id):
+            raise HTTPException(status_code=403, detail="Admin does not have access to this school")
+        
+        # Verify the school exists
+        school_check = supabase.table("schools").select("id, school_name").eq("id", str(school_id)).execute()
+        if not school_check.data:
+            raise HTTPException(status_code=404, detail="School not found")
+        
+        school_name = school_check.data[0].get("school_name")
+        
+        # Attendance records count
+        attendance_resp = supabase.table("attendance").select("id", count="exact").eq("school_id", str(school_id)).execute()
+        attendance_count = attendance_resp.count if hasattr(attendance_resp, 'count') else len(attendance_resp.data or [])
+        
+        # Assignments created count
+        assignments_resp = supabase.table("assignments").select("id", count="exact").eq("school_id", str(school_id)).execute()
+        assignments_count = assignments_resp.count if hasattr(assignments_resp, 'count') else len(assignments_resp.data or [])
+        
+        # Submissions count
+        submissions_resp = supabase.table("submissions").select("id", count="exact").eq("school_id", str(school_id)).execute()
+        submissions_count = submissions_resp.count if hasattr(submissions_resp, 'count') else len(submissions_resp.data or [])
+        
+        # Grades entered count
+        grades_resp = supabase.table("grades").select("id", count="exact").eq("school_id", str(school_id)).execute()
+        grades_count = grades_resp.count if hasattr(grades_resp, 'count') else len(grades_resp.data or [])
+        
+        return {
+            "school_id": str(school_id),
+            "school_name": school_name,
+            "attendance_records_count": attendance_count,
+            "assignments_created_count": assignments_count,
+            "submissions_count": submissions_count,
+            "grades_entered_count": grades_count,
+            "total_feature_interactions": attendance_count + assignments_count + submissions_count + grades_count
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error getting feature usage: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to get feature usage: {str(e)}")
