@@ -4,7 +4,7 @@ from datetime import date, datetime
 from uuid import UUID
 
 class AssignmentCreate(BaseModel):
-    class_id: str
+    class_id: UUID                          # Changed from str to UUID
     title: str
     description: Optional[str] = None
     due_date: Optional[date] = None
@@ -24,7 +24,7 @@ class AssignmentUpdate(BaseModel):
 
 class AssignmentResponse(BaseModel):
     id: str
-    class_id: str
+    class_id: UUID                          # Changed from str to UUID
     title: str
     description: Optional[str] = None
     due_date: Optional[date] = None
