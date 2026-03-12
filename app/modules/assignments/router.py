@@ -20,8 +20,11 @@ def create_assignment(
     Supports both regular assignments and MCQ assignments.
     """
     try:
+        # Convert class_id to string for database lookup
+        class_id_str = str(assignment.class_id)
+        
         # Check if class exists and user has permission, scoped to school
-        class_result = supabase.table("classes").select("*").eq("id", assignment.class_id).eq("school_id", str(school_id)).execute()
+        class_result = supabase.table("classes").select("*").eq("id", class_id_str).eq("school_id", str(school_id)).execute()
         if not class_result.data:
             raise HTTPException(status_code=404, detail="Class not found")
 
@@ -29,14 +32,14 @@ def create_assignment(
             raise HTTPException(status_code=403, detail="Access denied")
 
         assignment_data = {
-            "class_id": assignment.class_id,
+            "class_id": class_id_str,  # Convert UUID to string
             "title": assignment.title,
             "description": assignment.description,
             "due_date": assignment.due_date.isoformat() if assignment.due_date else None,
             "file_url": assignment.file_url,
             "total_points": assignment.total_points,
             "isMCQ": assignment.isMCQ or False,
-            "mcq_questions": json.dumps(assignment.mcq_questions) if assignment.mcq_questions else None,
+            "mcq_questions": assignment.mcq_questions,  # JSONB column handles this directly, no json.dumps needed
             "created_by": user["id"],
             "school_id": str(school_id),
             "created_at": datetime.utcnow().isoformat(),
@@ -205,7 +208,7 @@ def update_assignment(
         if assignment.isMCQ is not None:
             update_data["isMCQ"] = assignment.isMCQ
         if assignment.mcq_questions is not None:
-            update_data["mcq_questions"] = json.dumps(assignment.mcq_questions)
+            update_data["mcq_questions"] = assignment.mcq_questions  # JSONB handles this directly
 
         result = supabase.table("assignments").update(update_data).eq("id", assignment_id).eq("school_id", str(school_id)).execute()
         return AssignmentResponse(**result.data[0])
