@@ -5,6 +5,7 @@ from app.core.dependencies import require_teacher, require_admin_or_teacher, get
 from app.core.security import get_current_user
 from datetime import datetime
 from uuid import UUID
+import json
 
 router = APIRouter(tags=["Assignments"])
 
@@ -16,6 +17,7 @@ def create_assignment(
 ):
     """
     Create a new assignment. Admin or teacher of the class, scoped to school.
+    Supports both regular assignments and MCQ assignments.
     """
     try:
         # Check if class exists and user has permission, scoped to school
@@ -33,6 +35,8 @@ def create_assignment(
             "due_date": assignment.due_date.isoformat() if assignment.due_date else None,
             "file_url": assignment.file_url,
             "total_points": assignment.total_points,
+            "isMCQ": assignment.isMCQ or False,
+            "mcq_questions": json.dumps(assignment.mcq_questions) if assignment.mcq_questions else None,
             "created_by": user["id"],
             "school_id": str(school_id),
             "created_at": datetime.utcnow().isoformat(),
@@ -198,6 +202,10 @@ def update_assignment(
             update_data["file_url"] = assignment.file_url
         if assignment.total_points is not None:
             update_data["total_points"] = assignment.total_points
+        if assignment.isMCQ is not None:
+            update_data["isMCQ"] = assignment.isMCQ
+        if assignment.mcq_questions is not None:
+            update_data["mcq_questions"] = json.dumps(assignment.mcq_questions)
 
         result = supabase.table("assignments").update(update_data).eq("id", assignment_id).eq("school_id", str(school_id)).execute()
         return AssignmentResponse(**result.data[0])
