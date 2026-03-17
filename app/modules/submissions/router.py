@@ -5,6 +5,7 @@ from app.core.dependencies import require_admin_or_teacher, get_current_school_i
 from app.core.security import get_current_user
 from datetime import datetime
 from uuid import UUID
+import json
 
 router = APIRouter(tags=["Submissions"])
 
@@ -16,6 +17,7 @@ def submit_assignment(
 ):
     """
     Submit an assignment, scoped to school. Only students can submit.
+    Supports both regular file submissions and MCQ answer submissions.
     """
     try:
         if user["role"] != "student":
@@ -50,6 +52,8 @@ def submit_assignment(
             "submitted_at": datetime.utcnow().isoformat(),
             "file_url": submission.file_url,
             "notes": submission.notes,
+            "isMCQ": submission.isMCQ or False,
+            "mcq_answers": json.dumps(submission.mcq_answers) if submission.mcq_answers else None,
             "school_id": str(school_id)
         }
 
@@ -171,6 +175,10 @@ def update_submission(
             update_data["file_url"] = submission.file_url
         if submission.notes is not None:
             update_data["notes"] = submission.notes
+        if submission.isMCQ is not None:
+            update_data["isMCQ"] = submission.isMCQ
+        if submission.mcq_answers is not None:
+            update_data["mcq_answers"] = json.dumps(submission.mcq_answers)
 
         if update_data:
             result = supabase.table("submissions").update(update_data).eq("id", submission_id).eq("school_id", str(school_id)).execute()

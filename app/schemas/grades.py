@@ -4,8 +4,8 @@ from datetime import datetime
 from uuid import UUID
 
 class GradeCreate(BaseModel):
-    submission_id: str
-    grade: Union[str, int, float]  # Accept string, int, or float
+    submission_id: UUID                      # Changed from str to UUID
+    grade: Union[str, int, float]
     feedback: Optional[str] = None
     
     @field_validator('grade')
@@ -25,11 +25,11 @@ class GradeUpdate(BaseModel):
         return v
 
 class GradeResponse(BaseModel):
-    id: str
-    submission_id: str
+    id: UUID                                 # Changed from str to UUID
+    submission_id: UUID                      # Changed from str to UUID
     grade: str
     feedback: Optional[str] = None
-    graded_by: str
+    graded_by: UUID                          # Changed from str to UUID
     school_id: UUID
     graded_at: datetime
 
