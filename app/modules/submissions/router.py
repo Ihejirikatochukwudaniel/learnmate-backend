@@ -24,7 +24,7 @@ def submit_assignment(
             raise HTTPException(status_code=403, detail="Only students can submit assignments")
 
         # Check if assignment exists, scoped to school
-        assignment_result = supabase.table("assignments").select("*, classes(teacher_id)").eq("id", submission.assignment_id).eq("school_id", str(school_id)).execute()
+        assignment_result = supabase.table("assignments").select("*, classes(teacher_id)").eq("id", str(submission.assignment_id)).eq("school_id", str(school_id)).execute()
         if not assignment_result.data:
             raise HTTPException(status_code=404, detail="Assignment not found")
 
@@ -41,12 +41,12 @@ def submit_assignment(
             raise HTTPException(status_code=403, detail="Not enrolled in this class")
 
         # Check if submission already exists
-        existing = supabase.table("submissions").select("*").eq("assignment_id", submission.assignment_id).eq("student_id", user["id"]).execute()
+        existing = supabase.table("submissions").select("*").eq("assignment_id", str(submission.assignment_id)).eq("student_id", user["id"]).execute()
         if existing.data:
             raise HTTPException(status_code=400, detail="Submission already exists")
 
         submission_data = {
-            "assignment_id": submission.assignment_id,
+            "assignment_id": str(submission.assignment_id),
             "class_id": str(submission.class_id),
             "student_id": user["id"],
             "submitted_at": datetime.utcnow().isoformat(),
